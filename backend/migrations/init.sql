@@ -16,6 +16,8 @@ CREATE TYPE task_status AS ENUM (
 
 CREATE TYPE user_role AS ENUM ('admin', 'team_lead', 'member');
 
+CREATE TYPE team_role AS ENUM ('owner', 'manager', 'member', 'viewer');
+
 CREATE TYPE link_type AS ENUM ('similar', 'dependent', 'retry', 'related');
 
 CREATE TYPE blocker_type AS ENUM (
@@ -59,6 +61,36 @@ CREATE TABLE projects (
     created_by UUID REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Teams table
+CREATE TABLE teams (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    name VARCHAR(255) NOT NULL,
+    description TEXT,
+    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    created_by UUID NOT NULL REFERENCES users(id),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Team Members table
+CREATE TABLE team_members (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role team_role NOT NULL DEFAULT 'member',
+    joined_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(team_id, user_id)
+);
+
+-- Project Teams table (association between projects and teams)
+CREATE TABLE project_teams (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    assigned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(project_id, team_id)
 );
 
 -- Tasks table (main entity)
@@ -161,6 +193,13 @@ CREATE INDEX idx_users_email ON users(email);
 
 -- Project indexes
 CREATE INDEX idx_projects_org ON projects(organization_id);
+
+-- Team indexes
+CREATE INDEX idx_teams_org ON teams(organization_id);
+CREATE INDEX idx_team_members_team ON team_members(team_id);
+CREATE INDEX idx_team_members_user ON team_members(user_id);
+CREATE INDEX idx_project_teams_project ON project_teams(project_id);
+CREATE INDEX idx_project_teams_team ON project_teams(team_id);
 
 -- Acknowledgment action type
 CREATE TYPE acknowledgment_action AS ENUM ('accept', 'modify', 'disagree');
