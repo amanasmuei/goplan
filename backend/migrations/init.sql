@@ -27,6 +27,8 @@ CREATE TYPE blocker_type AS ENUM (
     'requirements'
 );
 
+CREATE TYPE project_status AS ENUM ('active', 'archived');
+
 -- Organizations table
 CREATE TABLE organizations (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -42,6 +44,7 @@ CREATE TABLE users (
     name VARCHAR(255) NOT NULL,
     role user_role NOT NULL DEFAULT 'member',
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    password_hash TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -51,7 +54,9 @@ CREATE TABLE projects (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     name VARCHAR(255) NOT NULL,
     description TEXT,
+    status project_status NOT NULL DEFAULT 'active',
     organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    created_by UUID REFERENCES users(id),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
