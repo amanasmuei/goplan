@@ -1,0 +1,52 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "goplan.fullname" . }}-ingress
+  namespace: {{ include "goplan.namespace" . }}
+  labels:
+    {{- include "goplan.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- if .Values.ingress.tls.enabled }}
+  tls:
+    - hosts:
+        {{- range .Values.ingress.tls.hosts }}
+        - {{ . | quote }}
+        {{- end }}
+      secretName: {{ .Values.ingress.tls.secretName }}
+  {{- end }}
+  rules:
+    {{- if .Values.backend.enabled }}
+    - host: {{ .Values.ingress.hosts.backend.host | quote }}
+      http:
+        paths:
+          {{- range .Values.ingress.hosts.backend.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "goplan.fullname" $ }}-backend
+                port:
+                  number: {{ $.Values.backend.service.port }}
+          {{- end }}
+    {{- end }}
+    {{- if .Values.frontend.enabled }}
+    - host: {{ .Values.ingress.hosts.frontend.host | quote }}
+      http:
+        paths:
+          {{- range .Values.ingress.hosts.frontend.paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                name: {{ include "goplan.fullname" $ }}-frontend
+                port:
+                  number: {{ $.Values.frontend.service.port }}
+          {{- end }}
+    {{- end }}
+{{- end }}

@@ -1,0 +1,31 @@
+{{- if .Values.backend.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "goplan.fullname" . }}-backend-config
+  namespace: {{ include "goplan.namespace" . }}
+  labels:
+    {{- include "goplan.backend.labels" . | nindent 4 }}
+data:
+  PORT: {{ .Values.backend.config.port | quote }}
+  HOST: {{ .Values.backend.config.host | quote }}
+  ENV: {{ .Values.backend.config.env | quote }}
+  LOG_LEVEL: {{ .Values.backend.config.logLevel | quote }}
+  LOG_FORMAT: {{ .Values.backend.config.logFormat | quote }}
+  DATABASE_MAX_CONNS: {{ .Values.backend.config.databaseMaxConns | quote }}
+  DATABASE_MIN_CONNS: {{ .Values.backend.config.databaseMinConns | quote }}
+  DATABASE_MAX_IDLE_TIME: {{ .Values.backend.config.databaseMaxIdleTime | quote }}
+  REDIS_DB: {{ .Values.backend.config.redisDb | quote }}
+  JWT_ACCESS_EXPIRY: {{ .Values.backend.config.jwtAccessExpiry | quote }}
+  JWT_REFRESH_EXPIRY: {{ .Values.backend.config.jwtRefreshExpiry | quote }}
+  BCRYPT_COST: {{ .Values.backend.config.bcryptCost | quote }}
+  CLAUDE_MODEL: {{ .Values.backend.config.claudeModel | quote }}
+  AI_MAX_TOKENS: {{ .Values.backend.config.aiMaxTokens | quote }}
+  AI_TIMEOUT: {{ .Values.backend.config.aiTimeout | quote }}
+  AI_ENABLED: {{ .Values.backend.config.aiEnabled | quote }}
+  RATE_LIMIT_ENABLED: {{ .Values.backend.config.rateLimitEnabled | quote }}
+  RATE_LIMIT_REQUESTS: {{ .Values.backend.config.rateLimitRequests | quote }}
+  RATE_LIMIT_WINDOW: {{ .Values.backend.config.rateLimitWindow | quote }}
+  OTEL_ENABLED: {{ .Values.backend.config.otelEnabled | quote }}
+  OTEL_SERVICE_NAME: {{ .Values.backend.config.otelServiceName | quote }}
+{{- end }}

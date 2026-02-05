@@ -1,0 +1,111 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: goplan-api
+  namespace: goplan
+  labels:
+    app: goplan-api
+    app.kubernetes.io/name: goplan-api
+    app.kubernetes.io/component: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: goplan-api
+  template:
+    metadata:
+      labels:
+        app: goplan-api
+        app.kubernetes.io/name: goplan-api
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: goplan-api
+      containers:
+        - name: api
+          image: goplan/api:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: SERVER_PORT
+              value: "8080"
+            - name: DATABASE_HOST
+              valueFrom:
+                secretKeyRef:
+                  name: goplan-db-credentials
+                  key: host
+            - name: DATABASE_PORT
+              valueFrom:
+                secretKeyRef:
+                  name: goplan-db-credentials
+                  key: port
+            - name: DATABASE_USER
+              valueFrom:
+                secretKeyRef:
+                  name: goplan-db-credentials
+                  key: username
+            - name: DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: goplan-db-credentials
+                  key: password
+            - name: DATABASE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: goplan-db-credentials
+                  key: database
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: goplan-jwt-secret
+                  key: secret
+            - name: EMBEDDING_SERVICE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: goplan-config
+                  key: embedding-service-url
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                        - goplan-api
+                topologyKey: kubernetes.io/hostname

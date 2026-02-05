@@ -1,0 +1,242 @@
+# ===========================================
+# GoPlan Redis Configuration
+# ===========================================
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: goplan-redis-config
+  namespace: goplan
+  labels:
+    app: goplan
+    component: redis
+data:
+  redis.conf: |
+    # Network
+    bind 0.0.0.0
+    port 6379
+    tcp-backlog 511
+    timeout 0
+    tcp-keepalive 300
+
+    # General
+    daemonize no
+    supervised no
+    loglevel notice
+    databases 16
+
+    # Snapshotting (RDB)
+    save 900 1
+    save 300 10
+    save 60 10000
+    stop-writes-on-bgsave-error yes
+    rdbcompression yes
+    rdbchecksum yes
+    dbfilename dump.rdb
+    dir /data
+
+    # Append Only File (AOF)
+    appendonly yes
+    appendfilename "appendonly.aof"
+    appendfsync everysec
+    no-appendfsync-on-rewrite no
+    auto-aof-rewrite-percentage 100
+    auto-aof-rewrite-min-size 64mb
+    aof-load-truncated yes
+
+    # Memory Management
+    maxmemory 256mb
+    maxmemory-policy allkeys-lru
+
+    # Slow Log
+    slowlog-log-slower-than 10000
+    slowlog-max-len 128
+
+    # Latency Monitor
+    latency-monitor-threshold 100
+
+    # Security (password set via env)
+    # requirepass is set via command line
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: goplan-redis-secrets
+  namespace: goplan
+  labels:
+    app: goplan
+    component: redis
+type: Opaque
+stringData:
+  REDIS_PASSWORD: "CHANGE_ME_IN_PRODUCTION"
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: goplan-redis
+  namespace: goplan
+  labels:
+    app: goplan
+    component: redis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: goplan
+      component: redis
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: goplan
+        component: redis
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          imagePullPolicy: IfNotPresent
+          command:
+            - redis-server
+            - /etc/redis/redis.conf
+            - --requirepass
+            - $(REDIS_PASSWORD)
+          ports:
+            - name: redis
+              containerPort: 6379
+              protocol: TCP
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: goplan-redis-secrets
+                  key: REDIS_PASSWORD
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          livenessProbe:
+            exec:
+              command:
+                - redis-cli
+                - -a
+                - $(REDIS_PASSWORD)
+                - ping
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - redis-cli
+                - -a
+                - $(REDIS_PASSWORD)
+                - ping
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/redis
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: goplan-redis-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: goplan-redis-data
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: goplan-redis-data
+  namespace: goplan
+  labels:
+    app: goplan
+    component: redis
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 5Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: goplan-redis
+  namespace: goplan
+  labels:
+    app: goplan
+    component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: redis
+      protocol: TCP
+  selector:
+    app: goplan
+    component: redis
+
+---
+# NetworkPolicy for Redis
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: goplan-redis-network-policy
+  namespace: goplan
+  labels:
+    app: goplan
+spec:
+  podSelector:
+    matchLabels:
+      app: goplan
+      component: redis
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: goplan
+              component: backend
+      ports:
+        - protocol: TCP
+          port: 6379
+  egress:
+    # Allow DNS
+    - to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53

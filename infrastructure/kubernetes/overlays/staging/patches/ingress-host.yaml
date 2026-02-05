@@ -1,0 +1,14 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: goplan-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rate-limit: "200"
+    nginx.ingress.kubernetes.io/rate-limit-window: "1m"
+spec:
+  tls:
+    - hosts:
+        - staging.goplan.yourcompany.com
+      secretName: goplan-staging-tls
+  rules:
+    - host: staging.goplan.yourcompany.com

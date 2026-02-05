@@ -1,0 +1,471 @@
+name: Deploy
+
+on:
+  # Deploy to staging when PR is merged to main
+  push:
+    branches: [main]
+  # Deploy to production on release
+  release:
+    types: [published]
+  # Manual deployment
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+env:
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ${{ github.repository }}/backend
+  FRONTEND_IMAGE: ${{ github.repository }}/frontend
+
+jobs:
+  # ----- Determine Environment -----
+  setup:
+    name: Setup Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.set-env.outputs.environment }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Determine environment
+        id: set-env
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ENV: ${{ github.event.inputs.environment }}
+        run: |
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            echo "environment=production" >> $GITHUB_OUTPUT
+          elif [[ "$EVENT_NAME" == "workflow_dispatch" ]]; then
+            echo "environment=$INPUT_ENV" >> $GITHUB_OUTPUT
+          else
+            echo "environment=staging" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Determine version
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          COMMIT_SHA: ${{ github.sha }}
+        run: |
+          if [[ "$EVENT_NAME" == "release" ]]; then
+            echo "version=$RELEASE_TAG" >> $GITHUB_OUTPUT
+          else
+            echo "version=sha-$COMMIT_SHA" >> $GITHUB_OUTPUT
+          fi
+
+  # ----- Build and Push Backend -----
+  build-backend:
+    name: Build Backend
+    runs-on: ubuntu-latest
+    needs: setup
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=${{ needs.setup.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.setup.outputs.environment == 'production' }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        env:
+          VERSION: ${{ needs.setup.outputs.version }}
+          COMMIT_SHA: ${{ github.sha }}
+        with:
+          context: .
+          file: ./Dockerfile
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            BUILD_TIME=${{ github.event.repository.updated_at }}
+            GIT_COMMIT=${{ env.COMMIT_SHA }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ----- Build and Push Frontend -----
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    needs: setup
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=${{ needs.setup.outputs.version }}
+            type=raw,value=latest,enable=${{ needs.setup.outputs.environment == 'production' }}
+
+      - name: Set build args for environment
+        id: build-args
+        env:
+          DEPLOY_ENV: ${{ needs.setup.outputs.environment }}
+        run: |
+          if [[ "$DEPLOY_ENV" == "production" ]]; then
+            echo "api_url=https://api.goplan.io/api/v1" >> $GITHUB_OUTPUT
+            echo "ws_url=wss://api.goplan.io/ws" >> $GITHUB_OUTPUT
+            echo "app_url=https://goplan.io" >> $GITHUB_OUTPUT
+          else
+            echo "api_url=https://api.staging.goplan.io/api/v1" >> $GITHUB_OUTPUT
+            echo "ws_url=wss://api.staging.goplan.io/ws" >> $GITHUB_OUTPUT
+            echo "app_url=https://staging.goplan.io" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./web
+          file: ./web/Dockerfile
+          target: production
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_API_URL=${{ steps.build-args.outputs.api_url }}
+            NEXT_PUBLIC_WS_URL=${{ steps.build-args.outputs.ws_url }}
+            NEXT_PUBLIC_APP_URL=${{ steps.build-args.outputs.app_url }}
+            NEXT_PUBLIC_APP_NAME=GoPlan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ----- Security Scan -----
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: [build-backend, build-frontend, setup]
+    steps:
+      - name: Run Trivy on Backend
+        uses: aquasecurity/trivy-action@master
+        env:
+          BACKEND_TAG: ${{ needs.setup.outputs.version }}
+        with:
+          image-ref: '${{ env.REGISTRY }}/${{ env.BACKEND_IMAGE }}:${{ env.BACKEND_TAG }}'
+          format: 'sarif'
+          output: 'trivy-backend.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Run Trivy on Frontend
+        uses: aquasecurity/trivy-action@master
+        env:
+          FRONTEND_TAG: ${{ needs.setup.outputs.version }}
+        with:
+          image-ref: '${{ env.REGISTRY }}/${{ env.FRONTEND_IMAGE }}:${{ env.FRONTEND_TAG }}'
+          format: 'sarif'
+          output: 'trivy-frontend.sarif'
+          severity: 'CRITICAL,HIGH'
+
+      - name: Upload Backend scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-backend.sarif'
+          category: 'backend-container'
+
+      - name: Upload Frontend scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-frontend.sarif'
+          category: 'frontend-container'
+
+  # ----- Deploy to Staging -----
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [setup, build-backend, build-frontend, security-scan]
+    if: needs.setup.outputs.environment == 'staging'
+    environment:
+      name: staging
+      url: https://staging.goplan.io
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.13.0'
+
+      - name: Configure kubeconfig
+        env:
+          KUBECONFIG_DATA: ${{ secrets.STAGING_KUBECONFIG }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_DATA" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Deploy with Helm
+        env:
+          IMAGE_TAG: ${{ needs.setup.outputs.version }}
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.STAGING_REDIS_URL }}
+          JWT_SECRET: ${{ secrets.STAGING_JWT_SECRET }}
+          CLAUDE_API_KEY: ${{ secrets.STAGING_CLAUDE_API_KEY }}
+        run: |
+          helm upgrade --install goplan ./deploy/helm/goplan \
+            --namespace goplan-staging \
+            --create-namespace \
+            --values ./deploy/helm/goplan/values.yaml \
+            --set global.environment=staging \
+            --set namespace.name=goplan-staging \
+            --set backend.image.tag="$IMAGE_TAG" \
+            --set frontend.image.tag="$IMAGE_TAG" \
+            --set backend.secrets.databaseUrl="$DATABASE_URL" \
+            --set backend.secrets.redisUrl="$REDIS_URL" \
+            --set backend.secrets.jwtSecret="$JWT_SECRET" \
+            --set backend.secrets.claudeApiKey="$CLAUDE_API_KEY" \
+            --set ingress.hosts.frontend.host=staging.goplan.io \
+            --set ingress.hosts.backend.host=api.staging.goplan.io \
+            --set frontend.config.apiUrl=https://api.staging.goplan.io/api/v1 \
+            --set frontend.config.wsUrl=wss://api.staging.goplan.io/ws \
+            --set frontend.config.appUrl=https://staging.goplan.io \
+            --wait \
+            --timeout 10m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/goplan-backend -n goplan-staging --timeout=5m
+          kubectl rollout status deployment/goplan-frontend -n goplan-staging --timeout=5m
+
+      - name: Run smoke tests
+        run: |
+          # Wait for services to be ready
+          sleep 30
+          # Backend health check
+          curl -f https://api.staging.goplan.io/health || exit 1
+          # Frontend health check
+          curl -f https://staging.goplan.io/api/health || exit 1
+          echo "Smoke tests passed!"
+
+  # ----- Deploy to Production -----
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [setup, build-backend, build-frontend, security-scan]
+    if: needs.setup.outputs.environment == 'production'
+    environment:
+      name: production
+      url: https://goplan.io
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'v1.28.0'
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.13.0'
+
+      - name: Configure kubeconfig
+        env:
+          KUBECONFIG_DATA: ${{ secrets.PRODUCTION_KUBECONFIG }}
+        run: |
+          mkdir -p ~/.kube
+          echo "$KUBECONFIG_DATA" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Deploy with Helm
+        env:
+          IMAGE_TAG: ${{ needs.setup.outputs.version }}
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+          REDIS_URL: ${{ secrets.PRODUCTION_REDIS_URL }}
+          JWT_SECRET: ${{ secrets.PRODUCTION_JWT_SECRET }}
+          CLAUDE_API_KEY: ${{ secrets.PRODUCTION_CLAUDE_API_KEY }}
+          SENDGRID_API_KEY: ${{ secrets.PRODUCTION_SENDGRID_API_KEY }}
+        run: |
+          helm upgrade --install goplan ./deploy/helm/goplan \
+            --namespace goplan-prod \
+            --create-namespace \
+            --values ./deploy/helm/goplan/values.yaml \
+            --values ./deploy/helm/goplan/values-production.yaml \
+            --set backend.image.tag="$IMAGE_TAG" \
+            --set frontend.image.tag="$IMAGE_TAG" \
+            --set backend.secrets.databaseUrl="$DATABASE_URL" \
+            --set backend.secrets.redisUrl="$REDIS_URL" \
+            --set backend.secrets.jwtSecret="$JWT_SECRET" \
+            --set backend.secrets.claudeApiKey="$CLAUDE_API_KEY" \
+            --set backend.secrets.sendgridApiKey="$SENDGRID_API_KEY" \
+            --wait \
+            --timeout 10m
+
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/goplan-backend -n goplan-prod --timeout=5m
+          kubectl rollout status deployment/goplan-frontend -n goplan-prod --timeout=5m
+
+      - name: Run smoke tests
+        run: |
+          # Wait for services to be ready
+          sleep 30
+          # Backend health check
+          curl -f https://api.goplan.io/health || exit 1
+          # Frontend health check
+          curl -f https://goplan.io/api/health || exit 1
+          echo "Smoke tests passed!"
+
+      - name: Create deployment record
+        env:
+          DEPLOY_VERSION: ${{ needs.setup.outputs.version }}
+        run: |
+          echo "Deployed version $DEPLOY_VERSION to production at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  # ----- Run E2E Tests -----
+  e2e-tests:
+    name: E2E Tests
+    runs-on: ubuntu-latest
+    needs: [setup, deploy-staging]
+    if: needs.setup.outputs.environment == 'staging'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: ./web
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: ./web
+        run: npx playwright install --with-deps
+
+      - name: Run E2E tests
+        working-directory: ./web
+        env:
+          PLAYWRIGHT_BASE_URL: https://staging.goplan.io
+        run: npx playwright test
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: web/playwright-report/
+          retention-days: 30
+
+  # ----- Rollback on Failure -----
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [setup, deploy-staging, deploy-production]
+    if: failure() && (needs.deploy-staging.result == 'failure' || needs.deploy-production.result == 'failure')
+    steps:
+      - name: Configure kubeconfig and set namespace
+        env:
+          DEPLOY_ENV: ${{ needs.setup.outputs.environment }}
+          PROD_KUBECONFIG: ${{ secrets.PRODUCTION_KUBECONFIG }}
+          STAGING_KUBECONFIG: ${{ secrets.STAGING_KUBECONFIG }}
+        run: |
+          mkdir -p ~/.kube
+          if [[ "$DEPLOY_ENV" == "production" ]]; then
+            echo "$PROD_KUBECONFIG" | base64 -d > ~/.kube/config
+            echo "NAMESPACE=goplan-prod" >> $GITHUB_ENV
+          else
+            echo "$STAGING_KUBECONFIG" | base64 -d > ~/.kube/config
+            echo "NAMESPACE=goplan-staging" >> $GITHUB_ENV
+          fi
+          chmod 600 ~/.kube/config
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v3
+        with:
+          version: 'v3.13.0'
+
+      - name: Rollback deployment
+        run: |
+          echo "Rolling back deployment in namespace: $NAMESPACE"
+          helm rollback goplan -n "$NAMESPACE" 0
+
+      - name: Verify rollback
+        run: |
+          kubectl rollout status deployment/goplan-backend -n "$NAMESPACE" --timeout=5m
+          kubectl rollout status deployment/goplan-frontend -n "$NAMESPACE" --timeout=5m
+
+      - name: Notify on rollback
+        run: |
+          echo "::warning::Deployment failed and was rolled back to previous version"
+
+  # ----- Cleanup -----
+  cleanup:
+    name: Cleanup Old Images
+    runs-on: ubuntu-latest
+    needs: [deploy-staging, deploy-production]
+    if: always() && (needs.deploy-staging.result == 'success' || needs.deploy-production.result == 'success')
+    steps:
+      - name: Delete old container images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'backend'
+          package-type: 'container'
+          min-versions-to-keep: 10
+          delete-only-pre-release-versions: false
+
+      - name: Delete old frontend images
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: 'frontend'
+          package-type: 'container'
+          min-versions-to-keep: 10
+          delete-only-pre-release-versions: false

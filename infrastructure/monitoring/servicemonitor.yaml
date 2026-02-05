@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: goplan-api
+  namespace: goplan
+  labels:
+    app: goplan-api
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: goplan-api
+  namespaceSelector:
+    matchNames:
+      - goplan
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

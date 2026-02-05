@@ -1,0 +1,298 @@
+# ===========================================
+# GoPlan Helm Chart - Default Values
+# ===========================================
+
+# Global settings
+global:
+  # Environment: development, staging, production
+  environment: development
+  # Image pull secrets
+  imagePullSecrets: []
+  # Storage class for PVCs
+  storageClass: "standard"
+
+# Namespace
+namespace:
+  create: true
+  name: goplan
+
+# ----- Backend Configuration -----
+backend:
+  enabled: true
+  name: goplan-backend
+
+  image:
+    repository: ghcr.io/goplan/goplan-backend
+    tag: latest
+    pullPolicy: Always
+
+  replicaCount: 2
+
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  # Health checks
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  # Environment configuration
+  config:
+    port: "8080"
+    host: "0.0.0.0"
+    env: "production"
+    logLevel: "info"
+    logFormat: "json"
+    databaseMaxConns: "25"
+    databaseMinConns: "5"
+    databaseMaxIdleTime: "5m"
+    redisDb: "0"
+    jwtAccessExpiry: "1h"
+    jwtRefreshExpiry: "7d"
+    bcryptCost: "12"
+    claudeModel: "claude-sonnet-4-20250514"
+    aiMaxTokens: "4096"
+    aiTimeout: "30s"
+    aiEnabled: "true"
+    rateLimitEnabled: "true"
+    rateLimitRequests: "100"
+    rateLimitWindow: "1m"
+    otelEnabled: "false"
+    otelServiceName: "goplan-api"
+
+  # Secrets - must be provided
+  secrets:
+    databaseUrl: ""
+    redisUrl: ""
+    jwtSecret: ""
+    claudeApiKey: ""
+    sendgridApiKey: ""
+
+  # Pod annotations
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+
+  # Security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+
+  # Service account
+  serviceAccount:
+    create: true
+    name: goplan-backend
+
+# ----- Frontend Configuration -----
+frontend:
+  enabled: true
+  name: goplan-frontend
+
+  image:
+    repository: ghcr.io/goplan/goplan-frontend
+    tag: latest
+    pullPolicy: Always
+
+  replicaCount: 2
+
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 3000
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 8
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+
+  livenessProbe:
+    httpGet:
+      path: /api/health
+      port: http
+    initialDelaySeconds: 10
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  readinessProbe:
+    httpGet:
+      path: /api/health
+      port: http
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+  config:
+    nodeEnv: "production"
+    apiUrl: "https://api.goplan.io/api/v1"
+    wsUrl: "wss://api.goplan.io/ws"
+    appUrl: "https://goplan.io"
+    appName: "GoPlan"
+
+  podAnnotations: {}
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1001
+    runAsGroup: 1001
+    fsGroup: 1001
+
+  serviceAccount:
+    create: true
+    name: goplan-frontend
+
+# ----- Ingress Configuration -----
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+    nginx.ingress.kubernetes.io/limit-rps: "50"
+    nginx.ingress.kubernetes.io/limit-rpm: "1000"
+
+  hosts:
+    frontend:
+      host: goplan.io
+      paths:
+        - path: /
+          pathType: Prefix
+    backend:
+      host: api.goplan.io
+      paths:
+        - path: /
+          pathType: Prefix
+
+  tls:
+    enabled: true
+    secretName: goplan-tls
+    hosts:
+      - goplan.io
+      - api.goplan.io
+
+# ----- PostgreSQL Configuration -----
+postgresql:
+  # Set to false in production (use managed DB)
+  enabled: false
+
+  image:
+    repository: postgres
+    tag: "16-alpine"
+
+  config:
+    database: goplan
+    maxConnections: "100"
+    sharedBuffers: "256MB"
+
+  secrets:
+    username: goplan
+    password: ""
+
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: ""
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+# ----- Redis Configuration -----
+redis:
+  # Set to false in production (use managed Redis)
+  enabled: false
+
+  image:
+    repository: redis
+    tag: "7-alpine"
+
+  config:
+    maxMemory: "256mb"
+    maxMemoryPolicy: "allkeys-lru"
+
+  secrets:
+    password: ""
+
+  persistence:
+    enabled: true
+    size: 5Gi
+    storageClass: ""
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+# ----- Network Policies -----
+networkPolicies:
+  enabled: true
+
+# ----- Monitoring -----
+monitoring:
+  enabled: false
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s

@@ -1,0 +1,101 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: goplan-alerts
+  namespace: goplan
+  labels:
+    app: goplan
+    release: prometheus
+spec:
+  groups:
+    - name: goplan.api.alerts
+      rules:
+        - alert: GoPlanAPIHighErrorRate
+          expr: |
+            (
+              sum(rate(http_requests_total{job="goplan-api",status=~"5.."}[5m]))
+              /
+              sum(rate(http_requests_total{job="goplan-api"}[5m]))
+            ) > 0.05
+          for: 5m
+          labels:
+            severity: critical
+            service: goplan-api
+          annotations:
+            summary: "GoPlan API high error rate"
+            description: "GoPlan API error rate is above 5% (current: {{ $value | humanizePercentage }})"
+            runbook_url: "https://wiki.example.com/goplan/runbooks/high-error-rate"
+
+        - alert: GoPlanAPIHighLatency
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{job="goplan-api"}[5m])) by (le)
+            ) > 1
+          for: 5m
+          labels:
+            severity: warning
+            service: goplan-api
+          annotations:
+            summary: "GoPlan API high latency"
+            description: "GoPlan API 95th percentile latency is above 1s (current: {{ $value | humanizeDuration }})"
+            runbook_url: "https://wiki.example.com/goplan/runbooks/high-latency"
+
+        - alert: GoPlanAPIPodNotReady
+          expr: |
+            kube_deployment_status_replicas_available{deployment="goplan-api"}
+            <
+            kube_deployment_spec_replicas{deployment="goplan-api"}
+          for: 10m
+          labels:
+            severity: warning
+            service: goplan-api
+          annotations:
+            summary: "GoPlan API pods not ready"
+            description: "Some GoPlan API pods are not ready"
+            runbook_url: "https://wiki.example.com/goplan/runbooks/pod-not-ready"
+
+        - alert: GoPlanAPIHighMemoryUsage
+          expr: |
+            (
+              container_memory_working_set_bytes{container="api",namespace="goplan"}
+              /
+              container_spec_memory_limit_bytes{container="api",namespace="goplan"}
+            ) > 0.85
+          for: 10m
+          labels:
+            severity: warning
+            service: goplan-api
+          annotations:
+            summary: "GoPlan API high memory usage"
+            description: "GoPlan API memory usage is above 85% (current: {{ $value | humanizePercentage }})"
+            runbook_url: "https://wiki.example.com/goplan/runbooks/high-memory"
+
+    - name: goplan.database.alerts
+      rules:
+        - alert: GoPlanDatabaseConnectionPoolExhausted
+          expr: |
+            pg_stat_activity_count{datname="goplan"}
+            >=
+            pg_settings_max_connections{datname="goplan"} * 0.8
+          for: 5m
+          labels:
+            severity: critical
+            service: goplan-database
+          annotations:
+            summary: "GoPlan database connection pool nearly exhausted"
+            description: "Database connection pool is at 80% capacity"
+            runbook_url: "https://wiki.example.com/goplan/runbooks/db-connections"
+
+        - alert: GoPlanDatabaseSlowQueries
+          expr: |
+            rate(pg_stat_statements_seconds_total{datname="goplan"}[5m])
+            /
+            rate(pg_stat_statements_calls_total{datname="goplan"}[5m]) > 0.5
+          for: 10m
+          labels:
+            severity: warning
+            service: goplan-database
+          annotations:
+            summary: "GoPlan database slow queries detected"
+            description: "Average query execution time is above 500ms"
+            runbook_url: "https://wiki.example.com/goplan/runbooks/slow-queries"

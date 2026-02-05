@@ -1,0 +1,15 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "goplan.fullname" . }}-frontend-config
+  namespace: {{ include "goplan.namespace" . }}
+  labels:
+    {{- include "goplan.frontend.labels" . | nindent 4 }}
+data:
+  NODE_ENV: {{ .Values.frontend.config.nodeEnv | quote }}
+  NEXT_PUBLIC_API_URL: {{ .Values.frontend.config.apiUrl | quote }}
+  NEXT_PUBLIC_WS_URL: {{ .Values.frontend.config.wsUrl | quote }}
+  NEXT_PUBLIC_APP_URL: {{ .Values.frontend.config.appUrl | quote }}
+  NEXT_PUBLIC_APP_NAME: {{ .Values.frontend.config.appName | quote }}
+{{- end }}

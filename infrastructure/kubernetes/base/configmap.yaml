@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: goplan-config
+  namespace: goplan
+  labels:
+    app.kubernetes.io/name: goplan
+data:
+  embedding-service-url: "http://embedding-service:8000"
+  log-level: "info"
+  allow-origins: "https://goplan.example.com"

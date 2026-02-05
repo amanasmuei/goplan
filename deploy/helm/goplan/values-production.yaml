@@ -1,0 +1,163 @@
+# ===========================================
+# GoPlan Helm Chart - Production Values
+# ===========================================
+
+global:
+  environment: production
+  imagePullSecrets: []
+  storageClass: "premium-rwo"
+
+namespace:
+  name: goplan-prod
+
+# ----- Backend Configuration -----
+backend:
+  image:
+    # Use specific version tag in production
+    tag: "v1.0.0"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 3
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 20
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    minAvailable: 2
+
+  config:
+    env: "production"
+    logLevel: "info"
+    databaseMaxConns: "50"
+    databaseMinConns: "10"
+    rateLimitRequests: "200"
+    otelEnabled: "true"
+
+  # Production secrets - should be provided via sealed-secrets or external-secrets
+  secrets:
+    # These MUST be overridden with actual values
+    databaseUrl: "postgres://goplan:SECURE_PASSWORD@prod-db.cluster.amazonaws.com:5432/goplan?sslmode=require"
+    redisUrl: "rediss://:SECURE_PASSWORD@prod-redis.cache.amazonaws.com:6379"
+    jwtSecret: "PRODUCTION_JWT_SECRET_MIN_32_CHARS"
+    claudeApiKey: "sk-ant-api-key"
+    sendgridApiKey: "SG.production-key"
+
+  podAnnotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8080"
+    prometheus.io/path: "/metrics"
+
+  # Node affinity for production workloads
+  nodeSelector:
+    workload: production
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "production"
+      effect: "NoSchedule"
+
+# ----- Frontend Configuration -----
+frontend:
+  image:
+    tag: "v1.0.0"
+    pullPolicy: IfNotPresent
+
+  replicaCount: 3
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 60
+    targetMemoryUtilizationPercentage: 70
+
+  podDisruptionBudget:
+    minAvailable: 2
+
+  config:
+    nodeEnv: "production"
+    apiUrl: "https://api.goplan.io/api/v1"
+    wsUrl: "wss://api.goplan.io/ws"
+    appUrl: "https://goplan.io"
+
+  nodeSelector:
+    workload: production
+
+  tolerations:
+    - key: "workload"
+      operator: "Equal"
+      value: "production"
+      effect: "NoSchedule"
+
+# ----- Ingress Configuration -----
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/limit-rps: "100"
+    nginx.ingress.kubernetes.io/limit-rpm: "2000"
+    nginx.ingress.kubernetes.io/limit-connections: "200"
+    # WAF rules
+    nginx.ingress.kubernetes.io/modsecurity-snippet: |
+      SecRuleEngine On
+      SecRule REQUEST_HEADERS:Content-Type "text/plain" "id:1,phase:1,t:lowercase,deny,status:403"
+
+  hosts:
+    frontend:
+      host: goplan.io
+    backend:
+      host: api.goplan.io
+
+  tls:
+    enabled: true
+    secretName: goplan-prod-tls
+    hosts:
+      - goplan.io
+      - api.goplan.io
+
+# Disable in-cluster databases for production
+postgresql:
+  enabled: false
+
+redis:
+  enabled: false
+
+# ----- Network Policies -----
+networkPolicies:
+  enabled: true
+
+# ----- Monitoring -----
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    scrapeTimeout: 10s
+
+# ----- Pod Priority -----
+priorityClassName: high-priority

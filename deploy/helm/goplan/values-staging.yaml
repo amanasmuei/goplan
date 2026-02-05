@@ -1,0 +1,109 @@
+# ===========================================
+# GoPlan Helm Chart - Staging Values
+# ===========================================
+
+global:
+  environment: staging
+  imagePullSecrets: []
+  storageClass: "standard"
+
+namespace:
+  name: goplan-staging
+
+# ----- Backend Configuration -----
+backend:
+  image:
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+    targetMemoryUtilizationPercentage: 80
+
+  config:
+    env: "staging"
+    logLevel: "debug"
+    otelEnabled: "true"
+
+  # Staging secrets - must be provided
+  secrets:
+    databaseUrl: ""
+    redisUrl: ""
+    jwtSecret: ""
+    claudeApiKey: ""
+
+# ----- Frontend Configuration -----
+frontend:
+  image:
+    tag: "latest"
+    pullPolicy: Always
+
+  replicaCount: 2
+
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 4
+    targetCPUUtilizationPercentage: 70
+
+  config:
+    nodeEnv: "staging"
+    apiUrl: "https://api.staging.goplan.io/api/v1"
+    wsUrl: "wss://api.staging.goplan.io/ws"
+    appUrl: "https://staging.goplan.io"
+    appName: "GoPlan (Staging)"
+
+# ----- Ingress Configuration -----
+ingress:
+  enabled: true
+  hosts:
+    frontend:
+      host: staging.goplan.io
+    backend:
+      host: api.staging.goplan.io
+
+  tls:
+    enabled: true
+    secretName: goplan-staging-tls
+    hosts:
+      - staging.goplan.io
+      - api.staging.goplan.io
+
+# Enable in-cluster databases for staging (cost-effective)
+postgresql:
+  enabled: true
+  persistence:
+    size: 10Gi
+
+redis:
+  enabled: true
+  persistence:
+    size: 2Gi
+
+# ----- Monitoring -----
+monitoring:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+    interval: 30s

@@ -1,0 +1,14 @@
+{{- if and .Values.frontend.enabled .Values.frontend.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "goplan.fullname" . }}-frontend
+  namespace: {{ include "goplan.namespace" . }}
+  labels:
+    {{- include "goplan.frontend.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.frontend.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "goplan.frontend.selectorLabels" . | nindent 6 }}
+{{- end }}

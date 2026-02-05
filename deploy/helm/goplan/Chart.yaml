@@ -1,0 +1,28 @@
+apiVersion: v2
+name: goplan
+description: GoPlan - AI-Powered Project Management Platform
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+kubeVersion: ">=1.23.0-0"
+
+keywords:
+  - project-management
+  - goplan
+  - ai
+  - planning
+
+home: https://goplan.io
+sources:
+  - https://github.com/goplan/goplan
+
+maintainers:
+  - name: GoPlan Team
+    email: team@goplan.io
+    url: https://goplan.io
+
+annotations:
+  category: ProjectManagement
+  licenses: MIT
+
+dependencies: []

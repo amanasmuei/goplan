@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: goplan
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secrets.yaml
+  - backend-deployment.yaml
+  - backend-service.yaml
+  - frontend-deployment.yaml
+  - ingress.yaml
+  - hpa.yaml
+
+commonLabels:
+  app.kubernetes.io/part-of: goplan
+  app.kubernetes.io/managed-by: kustomize

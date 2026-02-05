@@ -1,0 +1,275 @@
+# ===========================================
+# GoPlan PostgreSQL Configuration
+# For development/staging environments
+# Production: Use managed PostgreSQL (RDS, Cloud SQL, etc.)
+# ===========================================
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: goplan-postgres-config
+  namespace: goplan
+  labels:
+    app: goplan
+    component: postgres
+data:
+  POSTGRES_DB: "goplan"
+  POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
+  # PostgreSQL configuration
+  postgresql.conf: |
+    # Connection Settings
+    listen_addresses = '*'
+    max_connections = 100
+
+    # Memory Settings
+    shared_buffers = 256MB
+    effective_cache_size = 768MB
+    work_mem = 4MB
+    maintenance_work_mem = 64MB
+
+    # WAL Settings
+    wal_level = replica
+    max_wal_size = 1GB
+    min_wal_size = 80MB
+
+    # Checkpoints
+    checkpoint_completion_target = 0.9
+
+    # Logging
+    log_destination = 'stderr'
+    logging_collector = on
+    log_directory = 'log'
+    log_filename = 'postgresql-%Y-%m-%d_%H%M%S.log'
+    log_statement = 'ddl'
+    log_connections = on
+    log_disconnections = on
+    log_duration = on
+    log_min_duration_statement = 1000
+
+    # Autovacuum
+    autovacuum = on
+    autovacuum_max_workers = 3
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: goplan-postgres-secrets
+  namespace: goplan
+  labels:
+    app: goplan
+    component: postgres
+type: Opaque
+stringData:
+  POSTGRES_USER: "goplan"
+  POSTGRES_PASSWORD: "CHANGE_ME_IN_PRODUCTION"
+  REPLICATION_USER: "replicator"
+  REPLICATION_PASSWORD: "CHANGE_ME_IN_PRODUCTION"
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: goplan-postgres
+  namespace: goplan
+  labels:
+    app: goplan
+    component: postgres
+spec:
+  serviceName: goplan-postgres-headless
+  replicas: 1
+  selector:
+    matchLabels:
+      app: goplan
+      component: postgres
+  template:
+    metadata:
+      labels:
+        app: goplan
+        component: postgres
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: postgres
+              containerPort: 5432
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: goplan-postgres-config
+            - secretRef:
+                name: goplan-postgres-secrets
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: config
+              mountPath: /etc/postgresql/postgresql.conf
+              subPath: postgresql.conf
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: goplan-postgres-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          app: goplan
+          component: postgres
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 20Gi
+
+---
+# Headless service for StatefulSet
+apiVersion: v1
+kind: Service
+metadata:
+  name: goplan-postgres-headless
+  namespace: goplan
+  labels:
+    app: goplan
+    component: postgres
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
+  selector:
+    app: goplan
+    component: postgres
+
+---
+# ClusterIP service for application access
+apiVersion: v1
+kind: Service
+metadata:
+  name: goplan-postgres
+  namespace: goplan
+  labels:
+    app: goplan
+    component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+      protocol: TCP
+  selector:
+    app: goplan
+    component: postgres
+
+---
+# Backup CronJob
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: goplan-postgres-backup
+  namespace: goplan
+  labels:
+    app: goplan
+    component: postgres
+spec:
+  schedule: "0 2 * * *"  # Daily at 2 AM
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+          containers:
+            - name: backup
+              image: postgres:16-alpine
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  pg_dump -h goplan-postgres -U ${POSTGRES_USER} -d ${POSTGRES_DB} -Fc > /backup/goplan-$(date +%Y%m%d-%H%M%S).dump
+                  # Keep only last 7 days of backups
+                  find /backup -name "*.dump" -mtime +7 -delete
+              envFrom:
+                - secretRef:
+                    name: goplan-postgres-secrets
+              env:
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: goplan-postgres-secrets
+                      key: POSTGRES_PASSWORD
+              volumeMounts:
+                - name: backup
+                  mountPath: /backup
+          restartPolicy: OnFailure
+          volumes:
+            - name: backup
+              persistentVolumeClaim:
+                claimName: goplan-postgres-backup
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: goplan-postgres-backup
+  namespace: goplan
+  labels:
+    app: goplan
+    component: postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  storageClassName: standard
+  resources:
+    requests:
+      storage: 50Gi

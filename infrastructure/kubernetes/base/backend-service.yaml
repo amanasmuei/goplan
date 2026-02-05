@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: goplan-api
+  namespace: goplan
+  labels:
+    app: goplan-api
+    app.kubernetes.io/name: goplan-api
+    app.kubernetes.io/component: backend
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: goplan-api
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: goplan-api
+  namespace: goplan
+  labels:
+    app: goplan-api

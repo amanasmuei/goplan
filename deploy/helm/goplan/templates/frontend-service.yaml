@@ -1,0 +1,18 @@
+{{- if .Values.frontend.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "goplan.fullname" . }}-frontend
+  namespace: {{ include "goplan.namespace" . }}
+  labels:
+    {{- include "goplan.frontend.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.frontend.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.frontend.service.port }}
+      targetPort: http
+      protocol: TCP
+  selector:
+    {{- include "goplan.frontend.selectorLabels" . | nindent 4 }}
+{{- end }}
