@@ -10,8 +10,10 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import PredictionDisplay from '../components/PredictionDisplay'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export default function CreateTask() {
+  useDocumentTitle('Create New Task')
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const initialProjectId = searchParams.get('project_id') || ''
@@ -142,6 +144,7 @@ export default function CreateTask() {
         <button
           onClick={() => navigate(-1)}
           className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          aria-label="Go back"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>
@@ -200,11 +203,11 @@ export default function CreateTask() {
                   Project *
                 </label>
                 {isLoadingProjects ? (
-                  <div className="w-full border border-gray-300 rounded-lg p-3 bg-gray-50 text-gray-500">
+                  <div className="w-full border border-gray-300 rounded-lg p-3 bg-gray-50 text-gray-500" aria-live="polite">
                     Loading projects...
                   </div>
                 ) : projects.length === 0 ? (
-                  <div className="text-sm text-red-600">
+                  <div className="text-sm text-red-600" role="alert">
                     No active projects found. Please <a href="/projects" className="underline">create a project</a> first.
                   </div>
                 ) : (
@@ -251,6 +254,12 @@ export default function CreateTask() {
               </div>
             </div>
           </div>
+
+          {createMutation.isError && (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700" role="alert">
+              Failed to create task. Please try again.
+            </div>
+          )}
 
           <div className="flex justify-end gap-4">
             <button

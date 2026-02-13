@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom'
 import { teamApi } from '../services/api'
 import type { TeamResponse, CreateTeamRequest } from '../types'
 import { Users, Plus, Settings, Trash2, AlertCircle } from 'lucide-react'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export default function Teams() {
+  useDocumentTitle('Teams')
   const [teams, setTeams] = useState<TeamResponse[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -62,8 +64,9 @@ export default function Teams() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex justify-center items-center h-64" aria-live="polite">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+        <span className="sr-only">Loading teams...</span>
       </div>
     )
   }
@@ -85,7 +88,7 @@ export default function Teams() {
       </div>
 
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700" role="alert">
           <AlertCircle className="h-5 w-5" />
           {error}
         </div>
@@ -125,14 +128,14 @@ export default function Teams() {
                   <Link
                     to={`/teams/${teamResponse.team.id}`}
                     className="p-2 text-gray-400 hover:text-primary-600 transition-colors"
-                    title="Team settings"
+                    aria-label={`Settings for ${teamResponse.team.name}`}
                   >
                     <Settings className="h-4 w-4" />
                   </Link>
                   <button
                     onClick={() => handleDeleteTeam(teamResponse.team.id)}
                     className="p-2 text-gray-400 hover:text-red-600 transition-colors"
-                    title="Delete team"
+                    aria-label={`Delete ${teamResponse.team.name}`}
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
@@ -157,8 +160,8 @@ export default function Teams() {
       {/* Create Team Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Create New Team</h2>
+          <div className="bg-white rounded-xl p-6 w-full max-w-md" role="dialog" aria-labelledby="create-team-title">
+            <h2 id="create-team-title" className="text-xl font-semibold mb-4">Create New Team</h2>
             <form onSubmit={handleCreateTeam}>
               <div className="mb-4">
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">

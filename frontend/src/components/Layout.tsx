@@ -28,7 +28,7 @@ export default function Layout() {
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200">
+      <aside className="fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-200" aria-label="Main navigation">
         <div className="flex flex-col h-full">
           {/* Logo */}
           <div className="flex items-center gap-2 px-6 py-4 border-b border-gray-200">
@@ -37,7 +37,7 @@ export default function Layout() {
           </div>
 
           {/* Navigation */}
-          <nav className="flex-1 px-4 py-4 space-y-1">
+          <nav className="flex-1 px-4 py-4 space-y-1" aria-label="Sidebar">
             {navigation.map((item) => {
               const isActive = location.pathname === item.href
               return (
@@ -50,6 +50,7 @@ export default function Layout() {
                       ? 'bg-primary-50 text-primary-700'
                       : 'text-gray-600 hover:bg-gray-100'
                   )}
+                  aria-current={isActive ? 'page' : undefined}
                 >
                   <item.icon className="h-5 w-5" />
                   {item.name}
@@ -75,7 +76,7 @@ export default function Layout() {
               <button
                 onClick={logout}
                 className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
-                title="Logout"
+                aria-label="Log out"
               >
                 <LogOut className="h-5 w-5" />
               </button>

@@ -38,7 +38,7 @@ func (h *TaskHandler) CreateTask(c *fiber.Ctx) error {
 
 	response, err := h.taskService.CreateTask(c.Context(), req, userID, orgID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(response)
@@ -65,7 +65,7 @@ func (h *TaskHandler) GetTask(c *fiber.Ctx) error {
 
 	task, err := h.taskService.GetTask(c.Context(), id, orgID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if task == nil {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Task not found"})
@@ -103,7 +103,7 @@ func (h *TaskHandler) UpdateTask(c *fiber.Ctx) error {
 
 	task, err := h.taskService.UpdateTask(c.Context(), id, req, orgID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.JSON(task)
@@ -128,7 +128,7 @@ func (h *TaskHandler) DeleteTask(c *fiber.Ctx) error {
 	}
 
 	if err := h.taskService.DeleteTask(c.Context(), id, orgID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -152,10 +152,18 @@ func (h *TaskHandler) ListTasks(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{Error: err.Error()})
 	}
 
+	pageSize := c.QueryInt("page_size", 50)
+	if pageSize > 200 {
+		pageSize = 200
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+
 	filters := models.TaskFilters{
 		OrganizationID: orgID,
 		Page:           c.QueryInt("page", 1),
-		PageSize:       c.QueryInt("page_size", 50),
+		PageSize:       pageSize,
 		Search:         c.Query("search"),
 	}
 
@@ -176,7 +184,7 @@ func (h *TaskHandler) ListTasks(c *fiber.Ctx) error {
 
 	response, err := h.taskService.ListTasks(c.Context(), filters)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.JSON(response)
@@ -202,7 +210,7 @@ func (h *TaskHandler) GetSimilarTasks(c *fiber.Ctx) error {
 
 	similar, err := h.taskService.GetSimilarTasks(c.Context(), id, orgID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.JSON(fiber.Map{"similar_tasks": similar})

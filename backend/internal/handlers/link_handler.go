@@ -56,7 +56,7 @@ func (h *LinkHandler) CreateLink(c *fiber.Ctx) error {
 	// Check for duplicate link
 	exists, err := h.linkRepo.Exists(c.Context(), sourceID, req.TargetTaskID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if exists {
 		return c.Status(fiber.StatusConflict).JSON(ErrorResponse{Error: "Link already exists"})
@@ -72,7 +72,7 @@ func (h *LinkHandler) CreateLink(c *fiber.Ctx) error {
 		// Check if adding this dependency would create a cycle
 		hasCircular, err := h.linkRepo.HasCircularDependency(c.Context(), sourceID, req.TargetTaskID)
 		if err != nil {
-			return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+			return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 		}
 		if hasCircular {
 			return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: "Cannot create dependency: would create a circular dependency"})
@@ -88,7 +88,7 @@ func (h *LinkHandler) CreateLink(c *fiber.Ctx) error {
 	}
 
 	if err := h.linkRepo.Create(c.Context(), link); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(link)
@@ -120,7 +120,7 @@ func (h *LinkHandler) ListLinks(c *fiber.Ctx) error {
 
 	links, err := h.linkRepo.ListByTaskID(c.Context(), taskID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.JSON(fiber.Map{"links": links})
@@ -145,7 +145,7 @@ func (h *LinkHandler) DeleteLink(c *fiber.Ctx) error {
 	}
 
 	if err := h.linkRepo.Delete(c.Context(), linkID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)

@@ -18,6 +18,7 @@ import DependencyView from '../components/DependencyView'
 import AcknowledgmentDialog from '../components/AcknowledgmentDialog'
 import CompletionReviewForm from '../components/CompletionReviewForm'
 import type { AcknowledgmentRequest, CreateReviewRequest } from '../types'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export default function TaskDetail() {
   const { id } = useParams<{ id: string }>()
@@ -32,6 +33,8 @@ export default function TaskDetail() {
     queryFn: () => taskApi.get(id!),
     enabled: !!id,
   })
+
+  useDocumentTitle(task?.title ? `${task.title}` : 'Task Detail')
 
   const { data: linksData } = useQuery({
     queryKey: ['task-links', id],
@@ -78,11 +81,20 @@ export default function TaskDetail() {
   })
 
   if (isLoading) {
-    return <div className="p-8 text-center">Loading...</div>
+    return (
+      <div className="p-8 text-center" aria-live="polite">
+        Loading...
+        <span className="sr-only">Loading task details</span>
+      </div>
+    )
   }
 
   if (!task) {
-    return <div className="p-8 text-center">Task not found</div>
+    return (
+      <div className="p-8 text-center" role="alert">
+        Task not found
+      </div>
+    )
   }
 
   const links = linksData?.links || []
@@ -96,6 +108,7 @@ export default function TaskDetail() {
         <button
           onClick={() => navigate(-1)}
           className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+          aria-label="Go back"
         >
           <ArrowLeft className="h-5 w-5" />
         </button>

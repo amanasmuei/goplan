@@ -13,6 +13,7 @@ import {
   Archive,
   Calendar
 } from 'lucide-react'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>()
@@ -24,6 +25,8 @@ export default function ProjectDetail() {
   const [showAssignTeamModal, setShowAssignTeamModal] = useState(false)
   const [selectedTeamId, setSelectedTeamId] = useState('')
   const [isAssigning, setIsAssigning] = useState(false)
+
+  useDocumentTitle(project?.project.name ? `${project.project.name} - Project` : 'Project Detail')
 
   useEffect(() => {
     if (id) {
@@ -135,15 +138,16 @@ export default function ProjectDetail() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex justify-center items-center h-64" aria-live="polite">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+        <span className="sr-only">Loading project details...</span>
       </div>
     )
   }
 
   if (!project) {
     return (
-      <div className="text-center py-12">
+      <div className="text-center py-12" role="alert">
         <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
         <h3 className="text-lg font-medium text-gray-900 mb-2">Project not found</h3>
         <Link to="/projects" className="text-primary-600 hover:text-primary-700">
@@ -204,6 +208,7 @@ export default function ProjectDetail() {
                 <button
                   onClick={handleArchive}
                   className="flex items-center gap-2 px-4 py-2 border border-yellow-300 text-yellow-700 rounded-lg hover:bg-yellow-50 transition-colors"
+                  aria-label="Archive this project"
                 >
                   <Archive className="h-5 w-5" />
                   Archive
@@ -222,10 +227,10 @@ export default function ProjectDetail() {
       </div>
 
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700" role="alert">
           <AlertCircle className="h-5 w-5" />
           {error}
-          <button onClick={() => setError(null)} className="ml-auto text-red-500 hover:text-red-700">
+          <button onClick={() => setError(null)} className="ml-auto text-red-500 hover:text-red-700" aria-label="Dismiss error">
             &times;
           </button>
         </div>
@@ -314,7 +319,7 @@ export default function ProjectDetail() {
                     <button
                       onClick={() => handleRemoveTeam(team.id, team.name)}
                       className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                      title="Remove team"
+                      aria-label={`Remove ${team.name} from project`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -368,8 +373,8 @@ export default function ProjectDetail() {
       {/* Assign Team Modal */}
       {showAssignTeamModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Assign Team to Project</h2>
+          <div className="bg-white rounded-xl p-6 w-full max-w-md" role="dialog" aria-labelledby="assign-team-title">
+            <h2 id="assign-team-title" className="text-xl font-semibold mb-4">Assign Team to Project</h2>
             <form onSubmit={handleAssignTeam}>
               <div className="mb-6">
                 <label htmlFor="team" className="block text-sm font-medium text-gray-700 mb-1">

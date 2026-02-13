@@ -1,17 +1,29 @@
+import { lazy, Suspense } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from './store/authStore'
+import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/Layout'
-import TaskList from './pages/TaskList'
-import TaskDetail from './pages/TaskDetail'
-import CreateTask from './pages/CreateTask'
-import Dashboard from './pages/Dashboard'
-import Analytics from './pages/Analytics'
-import Login from './pages/Login'
-import Register from './pages/Register'
-import Teams from './pages/Teams'
-import TeamDetail from './pages/TeamDetail'
-import Projects from './pages/Projects'
-import ProjectDetail from './pages/ProjectDetail'
+
+const Login = lazy(() => import('./pages/Login'))
+const Register = lazy(() => import('./pages/Register'))
+const Dashboard = lazy(() => import('./pages/Dashboard'))
+const TaskList = lazy(() => import('./pages/TaskList'))
+const CreateTask = lazy(() => import('./pages/CreateTask'))
+const TaskDetail = lazy(() => import('./pages/TaskDetail'))
+const Teams = lazy(() => import('./pages/Teams'))
+const TeamDetail = lazy(() => import('./pages/TeamDetail'))
+const Projects = lazy(() => import('./pages/Projects'))
+const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
+const Analytics = lazy(() => import('./pages/Analytics'))
+
+function LoadingFallback() {
+  return (
+    <div className="flex justify-center items-center h-64" aria-live="polite">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+      <span className="sr-only">Loading page...</span>
+    </div>
+  )
+}
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
@@ -25,29 +37,31 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 function App() {
   return (
-    <Routes>
-      <Route path="/login" element={<Login />} />
-      <Route path="/register" element={<Register />} />
-      <Route
-        path="/"
-        element={
-          <ProtectedRoute>
-            <Layout />
-          </ProtectedRoute>
-        }
-      >
-        <Route index element={<Navigate to="/dashboard" replace />} />
-        <Route path="dashboard" element={<Dashboard />} />
-        <Route path="tasks" element={<TaskList />} />
-        <Route path="tasks/new" element={<CreateTask />} />
-        <Route path="tasks/:id" element={<TaskDetail />} />
-        <Route path="teams" element={<Teams />} />
-        <Route path="teams/:id" element={<TeamDetail />} />
-        <Route path="projects" element={<Projects />} />
-        <Route path="projects/:id" element={<ProjectDetail />} />
-        <Route path="analytics" element={<Analytics />} />
-      </Route>
-    </Routes>
+    <Suspense fallback={<LoadingFallback />}>
+      <Routes>
+        <Route path="/login" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load login page. Please refresh.</div>}><Login /></ErrorBoundary>} />
+        <Route path="/register" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load registration page. Please refresh.</div>}><Register /></ErrorBoundary>} />
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Layout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Navigate to="/dashboard" replace />} />
+          <Route path="dashboard" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load dashboard. Please refresh.</div>}><Dashboard /></ErrorBoundary>} />
+          <Route path="tasks" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load tasks. Please refresh.</div>}><TaskList /></ErrorBoundary>} />
+          <Route path="tasks/new" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load task creation. Please refresh.</div>}><CreateTask /></ErrorBoundary>} />
+          <Route path="tasks/:id" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load task details. Please refresh.</div>}><TaskDetail /></ErrorBoundary>} />
+          <Route path="teams" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load teams. Please refresh.</div>}><Teams /></ErrorBoundary>} />
+          <Route path="teams/:id" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load team details. Please refresh.</div>}><TeamDetail /></ErrorBoundary>} />
+          <Route path="projects" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load projects. Please refresh.</div>}><Projects /></ErrorBoundary>} />
+          <Route path="projects/:id" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load project details. Please refresh.</div>}><ProjectDetail /></ErrorBoundary>} />
+          <Route path="analytics" element={<ErrorBoundary fallback={<div className="p-8 text-center text-red-600" role="alert">Failed to load analytics. Please refresh.</div>}><Analytics /></ErrorBoundary>} />
+        </Route>
+      </Routes>
+    </Suspense>
   )
 }
 

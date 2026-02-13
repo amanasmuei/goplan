@@ -25,12 +25,12 @@ func NewAuthHandler(userRepo *repository.UserRepository, jwtConfig *config.JWTCo
 
 type LoginRequest struct {
 	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required,min=6"`
+	Password string `json:"password" validate:"required,min=8"`
 }
 
 type RegisterRequest struct {
 	Email    string `json:"email" validate:"required,email"`
-	Password string `json:"password" validate:"required,min=6"`
+	Password string `json:"password" validate:"required,min=8"`
 	Name     string `json:"name" validate:"required,min=2,max=255"`
 }
 
@@ -82,6 +82,8 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 		})
 	}
 	if user == nil {
+		// Prevent timing attacks - perform dummy hash comparison
+		_ = bcrypt.CompareHashAndPassword([]byte("$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"), []byte(req.Password))
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": "Invalid email or password",
 		})
@@ -156,9 +158,9 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		})
 	}
 
-	if len(req.Password) < 6 {
+	if len(req.Password) < 8 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Password must be at least 6 characters",
+			"error": "Password must be at least 8 characters",
 		})
 	}
 

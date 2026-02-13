@@ -1,8 +1,10 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -14,9 +16,11 @@ type Config struct {
 }
 
 type ServerConfig struct {
-	Port         string
-	Environment  string
-	AllowOrigins string
+	Port           string
+	Environment    string
+	AllowOrigins   string
+	TrustedProxies []string
+	ProxyHeader    string
 }
 
 type DatabaseConfig struct {
@@ -47,9 +51,11 @@ type EmbeddingConfig struct {
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
-			Port:         getEnv("SERVER_PORT", "8080"),
-			Environment:  getEnv("ENVIRONMENT", "development"),
-			AllowOrigins: getEnv("ALLOW_ORIGINS", "http://localhost:3000"),
+			Port:           getEnv("SERVER_PORT", "8080"),
+			Environment:    getEnv("ENVIRONMENT", "development"),
+			AllowOrigins:   getEnv("ALLOW_ORIGINS", "http://localhost:3000"),
+			TrustedProxies: getEnvAsSlice("TRUSTED_PROXIES", "127.0.0.1"),
+			ProxyHeader:    getEnv("PROXY_HEADER", "X-Forwarded-For"),
 		},
 		Database: DatabaseConfig{
 			Host:     getEnv("DB_HOST", "localhost"),
@@ -66,7 +72,7 @@ func Load() *Config {
 			DB:       getEnvInt("REDIS_DB", 0),
 		},
 		JWT: JWTConfig{
-			Secret:          getEnv("JWT_SECRET", "your-secret-key-change-in-production"),
+			Secret:          getEnv("JWT_SECRET", ""),
 			ExpirationHours: getEnvInt("JWT_EXPIRATION_HOURS", 24),
 		},
 		Embedding: EmbeddingConfig{
@@ -77,6 +83,17 @@ func Load() *Config {
 
 func (c *DatabaseConfig) DSN() string {
 	return "postgres://" + c.User + ":" + c.Password + "@" + c.Host + ":" + c.Port + "/" + c.DBName + "?sslmode=" + c.SSLMode
+}
+
+// Validate checks required configuration values.
+func (c *Config) Validate() error {
+	if c.JWT.Secret == "" {
+		return fmt.Errorf("JWT_SECRET is required")
+	}
+	if len(c.JWT.Secret) < 32 {
+		return fmt.Errorf("JWT_SECRET must be at least 32 characters")
+	}
+	return nil
 }
 
 func getEnv(key, defaultValue string) string {
@@ -93,4 +110,20 @@ func getEnvInt(key string, defaultValue int) int {
 		}
 	}
 	return defaultValue
+}
+
+func getEnvAsSlice(key, defaultValue string) []string {
+	value := os.Getenv(key)
+	if value == "" {
+		value = defaultValue
+	}
+	parts := strings.Split(value, ",")
+	result := make([]string, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed != "" {
+			result = append(result, trimmed)
+		}
+	}
+	return result
 }

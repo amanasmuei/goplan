@@ -63,7 +63,7 @@ services:
       - DB_SSLMODE=disable
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - JWT_SECRET=your-super-secret-jwt-key-change-in-production
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
       - EMBEDDING_SERVICE_URL=http://embedding-service:8000
     depends_on:
       postgres:

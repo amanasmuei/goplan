@@ -4,13 +4,19 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/gofiber/swagger"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"github.com/goplan/backend/internal/config"
 	"github.com/goplan/backend/internal/database"
@@ -39,6 +45,22 @@ func main() {
 
 	// Load configuration
 	cfg := config.Load()
+
+	// Validate configuration
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("Configuration validation failed: %v", err)
+	}
+
+	// Startup validation warnings
+	if cfg.Server.AllowOrigins == "*" {
+		log.Println("[WARNING] ALLOW_ORIGINS is set to '*' (wildcard). This allows any origin and should not be used in production.")
+	}
+	if cfg.Server.Environment == "production" && strings.Contains(cfg.Server.AllowOrigins, "localhost") {
+		log.Println("[WARNING] ALLOW_ORIGINS contains 'localhost' in production environment. This is likely a misconfiguration.")
+	}
+	if cfg.Server.Environment == "production" && cfg.Database.SSLMode == "disable" {
+		log.Println("[WARNING] DB_SSLMODE is 'disable' in production environment. Enable SSL for secure database connections.")
+	}
 
 	// Connect to database
 	db, err := database.New(&cfg.Database)
@@ -94,17 +116,49 @@ func main() {
 
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
-		AppName:      "GoPlan API",
-		ErrorHandler: customErrorHandler,
+		AppName:                 "GoPlan API",
+		ErrorHandler:            customErrorHandler,
+		BodyLimit:               1 * 1024 * 1024, // 1MB
+		EnableTrustedProxyCheck: true,
+		TrustedProxies:          cfg.Server.TrustedProxies,
+		ProxyHeader:             cfg.Server.ProxyHeader,
 	})
 
 	// Global middleware
 	app.Use(recover.New())
+
+	// Request ID middleware for request tracing (before logger so IDs appear in logs)
+	app.Use(requestid.New(requestid.Config{
+		Header: "X-Request-ID",
+		Generator: func() string {
+			return uuid.New().String()
+		},
+	}))
+
 	app.Use(logger.New())
+
+	// CORS hardening: reject wildcard origins when credentials are enabled
+	allowOrigins := cfg.Server.AllowOrigins
+	if allowOrigins == "*" {
+		log.Println("[WARNING] CORS: AllowOrigins is '*' but AllowCredentials is true. Wildcard origin with credentials is a security violation. Falling back to 'http://localhost:3000'.")
+		allowOrigins = "http://localhost:3000"
+	}
 	app.Use(cors.New(cors.Config{
-		AllowOrigins: cfg.Server.AllowOrigins,
-		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
-		AllowMethods: "GET, POST, PUT, DELETE, OPTIONS",
+		AllowOrigins:     allowOrigins,
+		AllowHeaders:     "Origin, Content-Type, Accept, Authorization, X-Request-ID",
+		AllowMethods:     "GET, POST, PUT, DELETE, OPTIONS",
+		AllowCredentials: true,
+	}))
+
+	// Global rate limiter: 100 requests per minute
+	app.Use(limiter.New(limiter.Config{
+		Max:        100,
+		Expiration: 1 * time.Minute,
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "too many requests, please try again later",
+			})
+		},
 	}))
 
 	// Health check endpoint (no auth required)
@@ -112,7 +166,6 @@ func main() {
 		if err := db.Health(c.Context()); err != nil {
 			return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
 				"status": "unhealthy",
-				"error":  err.Error(),
 			})
 		}
 		return c.JSON(fiber.Map{
@@ -121,16 +174,28 @@ func main() {
 		})
 	})
 
-	// Swagger documentation (no auth required)
-	app.Get("/swagger/*", swagger.HandlerDefault)
+	// Swagger documentation (no auth required, disabled in production)
+	if cfg.Server.Environment != "production" {
+		app.Get("/swagger/*", swagger.HandlerDefault)
+	}
 
 	// API routes
 	api := app.Group("/api/v1")
 
 	// Auth routes (no authentication required)
 	auth := api.Group("/auth")
-	auth.Post("/login", authHandler.Login)
-	auth.Post("/register", authHandler.Register)
+	// Stricter rate limiting for auth endpoints: 5 requests per minute
+	authLimiter := limiter.New(limiter.Config{
+		Max:        5,
+		Expiration: 1 * time.Minute,
+		LimitReached: func(c *fiber.Ctx) error {
+			return c.Status(fiber.StatusTooManyRequests).JSON(fiber.Map{
+				"error": "too many requests, please try again later",
+			})
+		},
+	})
+	auth.Post("/login", authLimiter, authHandler.Login)
+	auth.Post("/register", authLimiter, authHandler.Register)
 
 	// Apply auth middleware to all other API routes
 	api.Use(authMiddleware.Authenticate())
@@ -224,10 +289,12 @@ func main() {
 
 func customErrorHandler(c *fiber.Ctx, err error) error {
 	code := fiber.StatusInternalServerError
+	message := "an internal error occurred"
 	if e, ok := err.(*fiber.Error); ok {
 		code = e.Code
+		message = e.Message
 	}
 	return c.Status(code).JSON(fiber.Map{
-		"error": err.Error(),
+		"error": message,
 	})
 }

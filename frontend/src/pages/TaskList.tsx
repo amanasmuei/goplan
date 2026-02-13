@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { taskApi } from '../services/api'
+import { useDebounce } from '../hooks/useDebounce'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import type { TaskStatus } from '../types'
 import {
   Plus,
@@ -25,16 +27,18 @@ const statusOptions: { value: TaskStatus | ''; label: string }[] = [
 ]
 
 export default function TaskList() {
+  useDocumentTitle('Tasks')
   const [search, setSearch] = useState('')
+  const debouncedSearch = useDebounce(search, 300)
   const [status, setStatus] = useState<TaskStatus | ''>('')
   const [page, setPage] = useState(1)
   const pageSize = 10
 
   const { data, isLoading } = useQuery({
-    queryKey: ['tasks', { search, status, page, pageSize }],
+    queryKey: ['tasks', { search: debouncedSearch, status, page, pageSize }],
     queryFn: () =>
       taskApi.list({
-        search: search || undefined,
+        search: debouncedSearch || undefined,
         status: status || undefined,
         page,
         page_size: pageSize,
@@ -69,7 +73,7 @@ export default function TaskList() {
         <div className="flex flex-wrap gap-4">
           <div className="flex-1 min-w-[200px]">
             <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" aria-hidden="true" />
               <input
                 type="text"
                 placeholder="Search tasks..."
@@ -78,19 +82,21 @@ export default function TaskList() {
                   setSearch(e.target.value)
                   setPage(1)
                 }}
+                aria-label="Search tasks"
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg
                          focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               />
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Filter className="h-5 w-5 text-gray-400" />
+            <Filter className="h-5 w-5 text-gray-400" aria-hidden="true" />
             <select
               value={status}
               onChange={(e) => {
                 setStatus(e.target.value as TaskStatus | '')
                 setPage(1)
               }}
+              aria-label="Filter by status"
               className="border border-gray-300 rounded-lg px-3 py-2
                        focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
             >
@@ -107,7 +113,7 @@ export default function TaskList() {
       {/* Task List */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200">
         {isLoading ? (
-          <div className="p-8 text-center text-gray-500">Loading...</div>
+          <div className="p-8 text-center text-gray-500" aria-live="polite">Loading...</div>
         ) : tasks.length > 0 ? (
           <div className="divide-y divide-gray-100">
             {tasks.map((task) => (
@@ -171,6 +177,7 @@ export default function TaskList() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
+                aria-label="Previous page"
                 className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50
                          disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -179,6 +186,7 @@ export default function TaskList() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
+                aria-label="Next page"
                 className="p-2 rounded-lg border border-gray-300 hover:bg-gray-50
                          disabled:opacity-50 disabled:cursor-not-allowed"
               >

@@ -14,6 +14,7 @@ import {
   Eye,
   FolderKanban
 } from 'lucide-react'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 const roleColors: Record<TeamRole, string> = {
   owner: 'bg-purple-100 text-purple-700',
@@ -31,6 +32,8 @@ export default function TeamDetail() {
   const [showAddMemberModal, setShowAddMemberModal] = useState(false)
   const [newMember, setNewMember] = useState<AddTeamMemberRequest>({ user_id: '', role: 'member' })
   const [isAdding, setIsAdding] = useState(false)
+
+  useDocumentTitle(team?.team.name ? `${team.team.name} - Team` : 'Team Detail')
 
   useEffect(() => {
     if (id) {
@@ -108,15 +111,16 @@ export default function TeamDetail() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex justify-center items-center h-64" aria-live="polite">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+        <span className="sr-only">Loading team details...</span>
       </div>
     )
   }
 
   if (!team) {
     return (
-      <div className="text-center py-12">
+      <div className="text-center py-12" role="alert">
         <AlertCircle className="h-12 w-12 text-gray-400 mx-auto mb-4" />
         <h3 className="text-lg font-medium text-gray-900 mb-2">Team not found</h3>
         <Link to="/teams" className="text-primary-600 hover:text-primary-700">
@@ -160,10 +164,10 @@ export default function TeamDetail() {
       </div>
 
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700" role="alert">
           <AlertCircle className="h-5 w-5" />
           {error}
-          <button onClick={() => setError(null)} className="ml-auto text-red-500 hover:text-red-700">
+          <button onClick={() => setError(null)} className="ml-auto text-red-500 hover:text-red-700" aria-label="Dismiss error">
             &times;
           </button>
         </div>
@@ -200,6 +204,7 @@ export default function TeamDetail() {
                         <select
                           value={member.role}
                           onChange={(e) => handleUpdateRole(member.user_id, e.target.value as TeamRole)}
+                          aria-label={`Role for ${member.user?.name || 'Unknown User'}`}
                           className={`px-3 py-1.5 rounded-lg text-sm font-medium border-0 cursor-pointer ${roleColors[member.role]}`}
                         >
                           <option value="owner">Owner</option>
@@ -210,7 +215,7 @@ export default function TeamDetail() {
                         <button
                           onClick={() => handleRemoveMember(member.user_id, member.user?.name || 'this user')}
                           className="p-2 text-gray-400 hover:text-red-600 transition-colors"
-                          title="Remove member"
+                          aria-label={`Remove ${member.user?.name || 'this user'} from team`}
                         >
                           <Trash2 className="h-4 w-4" />
                         </button>
@@ -279,8 +284,8 @@ export default function TeamDetail() {
       {/* Add Member Modal */}
       {showAddMemberModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Add Team Member</h2>
+          <div className="bg-white rounded-xl p-6 w-full max-w-md" role="dialog" aria-labelledby="add-member-title">
+            <h2 id="add-member-title" className="text-xl font-semibold mb-4">Add Team Member</h2>
             <form onSubmit={handleAddMember}>
               <div className="mb-4">
                 <label htmlFor="user_id" className="block text-sm font-medium text-gray-700 mb-1">

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { taskApi } from '../services/api'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 import {
   ListTodo,
   Clock,
@@ -11,6 +12,7 @@ import {
 } from 'lucide-react'
 
 export default function Dashboard() {
+  useDocumentTitle('Dashboard')
   const { data: tasksData } = useQuery({
     queryKey: ['tasks'],
     queryFn: () => taskApi.list({ page: 1, page_size: 10 }),

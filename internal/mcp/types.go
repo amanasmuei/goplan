@@ -2,6 +2,7 @@
 package mcp
 
 import (
+	"context"
 	"time"
 
 	"github.com/goplan/goplan/internal/domain/task"
@@ -153,6 +154,12 @@ type AuditRecord struct {
 	Result         map[string]interface{} `json:"result,omitempty"`
 	Status         string                 `json:"status"`
 	ErrorMessage   *string                `json:"errorMessage,omitempty"`
+}
+
+// AuditRepository defines MCP audit log data access operations.
+type AuditRepository interface {
+	// Create persists an audit record to the database.
+	Create(ctx context.Context, record *AuditRecord) error
 }
 
 // AuditStatus constants

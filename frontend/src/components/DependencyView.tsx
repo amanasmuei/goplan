@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueries } from '@tanstack/react-query'
 import { linkApi, taskApi } from '../services/api'
 import type { TaskLink, Task, TaskStatus } from '../types'
 import {
@@ -54,13 +54,13 @@ export default function DependencyView({ taskId, currentTask }: DependencyViewPr
   const links = linksData?.links || []
 
   // Fetch details for each linked task
-  const linkedTaskQueries = links.map((link) =>
-    useQuery({
+  const linkedTaskQueries = useQueries({
+    queries: links.map((link) => ({
       queryKey: ['task', link.target_task_id],
       queryFn: () => taskApi.get(link.target_task_id),
       enabled: !!link.target_task_id,
-    })
-  )
+    })),
+  })
 
   const linkedTasks: LinkedTaskWithDetails[] = links.map((link, index) => ({
     ...link,

@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"strings"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
@@ -107,6 +108,7 @@ func GenerateToken(claims *models.AuthClaims, secret string, expirationHours int
 		"email":           claims.Email,
 		"role":            string(claims.Role),
 		"organization_id": claims.OrganizationID.String(),
+		"exp":             time.Now().Add(time.Duration(expirationHours) * time.Hour).Unix(),
 	})
 
 	return token.SignedString([]byte(secret))

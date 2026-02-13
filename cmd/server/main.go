@@ -48,6 +48,7 @@ type Repositories struct {
 	Task        repository.TaskRepository
 	Comment     repository.CommentRepository
 	ActivityLog repository.ActivityLogRepository
+	Audit       mcp.AuditRepository
 	TxManager   repository.TxManager
 }
 
@@ -63,6 +64,7 @@ func initRepositories(db *postgres.DB) *Repositories {
 		Task:        postgres.NewTaskRepository(pool),
 		Comment:     postgres.NewCommentRepository(pool),
 		ActivityLog: postgres.NewActivityLogRepository(pool),
+		Audit:       postgres.NewAuditRepository(pool),
 		TxManager:   db.TxManager(),
 	}
 }
@@ -81,7 +83,13 @@ func main() {
 	})
 	logging.SetDefault(logger)
 
-	// Skip validation in development mode for easier local setup
+	// Always validate JWT_SECRET regardless of environment
+	if cfg.Auth.JWTSecret == "" || len(cfg.Auth.JWTSecret) < 32 {
+		logger.Error("Configuration validation failed", "error", "JWT_SECRET is required and must be at least 32 characters")
+		os.Exit(1)
+	}
+
+	// Skip remaining validation in development mode for easier local setup
 	if !cfg.IsDevelopment() {
 		if err := cfg.Validate(); err != nil {
 			logger.Error("Configuration validation failed", "error", err)
@@ -196,7 +204,7 @@ func main() {
 	logger.Info("Registered MCP tools", "count", len(registry.List()))
 
 	// Create MCP server
-	mcpServer := mcp.NewServer(registry)
+	mcpServer := mcp.NewServer(registry, repos.Audit)
 
 	// Initialize AI service if enabled
 	var aiHandler *handlers.AIHandler
@@ -220,8 +228,8 @@ func main() {
 	// Register API v1 routes
 	apiRouter.RegisterRoutes(mux)
 
-	// Mount MCP routes
-	mux.Handle("/mcp/", mcpServer.Routes())
+	// Mount MCP routes with JWT auth middleware
+	mux.Handle("/mcp/", authMiddleware.Authenticate(mcpServer.Routes()))
 
 	// Mount AI routes if enabled
 	if aiHandler != nil {
@@ -399,14 +407,39 @@ func recoveryMiddleware(logger *logging.Logger, showDetails bool) func(http.Hand
 
 // corsMiddleware adds CORS headers.
 func corsMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
+	// Log a startup warning if wildcard origin is configured with credentials
+	hasWildcard := false
+	for _, o := range cfg.Security.CORSOrigins {
+		if o == "*" {
+			hasWildcard = true
+			break
+		}
+	}
+	if hasWildcard {
+		log.Println("[WARNING] CORS: CORSOrigins contains '*' (wildcard). Wildcard origin with credentials is a security violation per the CORS spec. Requests from unknown origins will be rejected.")
+	}
+
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Security headers (defense-in-depth, in addition to SecurityHeaders middleware)
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("X-Frame-Options", "DENY")
+
 			// Set CORS headers
 			origin := r.Header.Get("Origin")
 			if origin != "" {
 				allowed := false
 				for _, o := range cfg.Security.CORSOrigins {
-					if o == "*" || o == origin {
+					if o == "*" {
+						// When credentials are enabled, wildcard origin is not spec-compliant.
+						// Instead of sending "Access-Control-Allow-Origin: *", echo the
+						// requesting origin only in development mode.
+						if cfg.IsDevelopment() {
+							allowed = true
+						}
+						break
+					}
+					if o == origin {
 						allowed = true
 						break
 					}

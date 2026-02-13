@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { authApi } from '../services/api'
 import { LinkIcon, AlertCircle } from 'lucide-react'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export default function Register() {
+  useDocumentTitle('Create Account')
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
   const [isLoading, setIsLoading] = useState(false)
@@ -25,8 +28,8 @@ export default function Register() {
       return
     }
 
-    if (formData.password.length < 6) {
-      setError('Password must be at least 6 characters')
+    if (formData.password.length < 8) {
+      setError('Password must be at least 8 characters')
       return
     }
 
@@ -38,11 +41,14 @@ export default function Register() {
         email: formData.email,
         password: formData.password,
       })
-      login(response.token, response.user)
+      login(response.token, response.user, response.expires_at)
       navigate('/dashboard')
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } }
-      setError(error.response?.data?.error || 'Failed to create account. Please try again.')
+      if (axios.isAxiosError(err) && err.response?.data?.error) {
+        setError(err.response.data.error)
+      } else {
+        setError('An unexpected error occurred')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -60,7 +66,7 @@ export default function Register() {
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700" role="alert">
             <AlertCircle className="h-5 w-5 flex-shrink-0" />
             <span className="text-sm">{error}</span>
           </div>
@@ -108,9 +114,9 @@ export default function Register() {
               value={formData.password}
               onChange={(e) => setFormData({ ...formData, password: e.target.value })}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-              placeholder="At least 6 characters"
+              placeholder="At least 8 characters"
               required
-              minLength={6}
+              minLength={8}
             />
           </div>
 
@@ -126,7 +132,7 @@ export default function Register() {
               className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
               placeholder="Repeat your password"
               required
-              minLength={6}
+              minLength={8}
             />
           </div>
 

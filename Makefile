@@ -1,4 +1,4 @@
-.PHONY: help dev build test lint clean docker-up docker-down migrate
+.PHONY: help dev build test lint clean docker-up docker-down migrate sqlc migrate-up migrate-down
 
 # Default target
 help:
@@ -24,17 +24,17 @@ dev:
 # Build all services
 build:
 	cd backend && go build -o bin/api ./cmd/api
-	cd frontend && npm run build
+	cd frontend && yarn build
 
 # Run tests
 test:
-	cd backend && go test -v -cover ./...
-	cd frontend && npm test
+	cd backend && go test -v -race -cover ./...
+	cd frontend && yarn test
 
 # Run linters
 lint:
 	cd backend && golangci-lint run
-	cd frontend && npm run lint
+	cd frontend && yarn lint
 
 # Clean build artifacts
 clean:
@@ -66,12 +66,12 @@ api:
 
 # Run frontend locally
 frontend:
-	cd frontend && npm run dev
+	cd frontend && yarn dev
 
 # Install dependencies
 install:
 	cd backend && go mod download
-	cd frontend && npm install
+	cd frontend && yarn install
 
 # Generate Swagger docs
 swagger:
@@ -80,9 +80,21 @@ swagger:
 # Format code
 fmt:
 	cd backend && go fmt ./...
-	cd frontend && npm run format
+	cd frontend && yarn format
 
 # Create a test JWT token (for development)
 token:
 	@echo "Use this endpoint to generate a test token:"
 	@echo "curl -X POST http://localhost:8080/api/v1/auth/dev-token"
+
+# Generate sqlc code
+sqlc:
+	cd sqlc && sqlc generate
+
+# Run database migrations up
+migrate-up:
+	migrate -path ./migrations -database "$$DATABASE_URL" up
+
+# Run database migrations down one step
+migrate-down:
+	migrate -path ./migrations -database "$$DATABASE_URL" down 1

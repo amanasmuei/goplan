@@ -50,7 +50,7 @@ func (h *BlockerHandler) CreateBlocker(c *fiber.Ctx) error {
 	// Update task status to blocked
 	task.Status = models.TaskStatusBlocked
 	if err := h.taskRepo.Update(c.Context(), task); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	blocker := &models.TaskBlocker{
@@ -61,7 +61,7 @@ func (h *BlockerHandler) CreateBlocker(c *fiber.Ctx) error {
 	}
 
 	if err := h.blockerRepo.Create(c.Context(), blocker); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(blocker)
@@ -93,7 +93,7 @@ func (h *BlockerHandler) ListBlockers(c *fiber.Ctx) error {
 
 	blockers, err := h.blockerRepo.ListByTaskID(c.Context(), taskID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.JSON(fiber.Map{"blockers": blockers})
@@ -130,13 +130,13 @@ func (h *BlockerHandler) ResolveBlocker(c *fiber.Ctx) error {
 	}
 
 	if err := h.blockerRepo.Resolve(c.Context(), blockerID, req.DaysBlocked); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	// Get task and check if there are other unresolved blockers
 	blockers, err := h.blockerRepo.ListByTaskID(c.Context(), blocker.TaskID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	hasUnresolved := false

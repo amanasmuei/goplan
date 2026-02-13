@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import { clsx } from 'clsx'
 import type { Task } from '../types'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 interface AnalyticsData {
   totalTasks: number
@@ -149,7 +150,7 @@ function AccuracyChart({ data }: { data: AnalyticsData['predictionAccuracy'] }) 
   return (
     <div className="space-y-4">
       {/* Stacked bar */}
-      <div className="h-8 flex rounded-lg overflow-hidden">
+      <div className="h-8 flex rounded-lg overflow-hidden" role="img" aria-label="Prediction accuracy breakdown chart">
         {segments.map((seg) => (
           <div
             key={seg.label}
@@ -211,6 +212,7 @@ function StatusChart({ data }: { data: Record<string, number> }) {
 }
 
 export default function Analytics() {
+  useDocumentTitle('Analytics')
   const { data: tasksData, isLoading } = useQuery({
     queryKey: ['tasks', { page: 1, page_size: 250 }],
     queryFn: () => taskApi.list({ page: 1, page_size: 250 }),
@@ -218,7 +220,7 @@ export default function Analytics() {
 
   if (isLoading) {
     return (
-      <div className="p-8 text-center">
+      <div className="p-8 text-center" aria-live="polite">
         <div className="animate-spin h-8 w-8 border-4 border-primary-500 border-t-transparent rounded-full mx-auto" />
         <p className="mt-4 text-gray-500">Loading analytics...</p>
       </div>
@@ -385,27 +387,27 @@ export default function Analytics() {
         <ul className="space-y-2 text-sm text-white/90">
           {analytics.avgAccuracy < 70 && (
             <li>
-              • Prediction accuracy is below 70%. Consider reviewing task descriptions for more detail.
+              Prediction accuracy is below 70%. Consider reviewing task descriptions for more detail.
             </li>
           )}
           {analytics.predictionAccuracy.underEstimated > analytics.predictionAccuracy.overEstimated && (
             <li>
-              • Tasks are frequently taking longer than predicted. Common blockers may need addressing.
+              Tasks are frequently taking longer than predicted. Common blockers may need addressing.
             </li>
           )}
           {analytics.tasksByStatus['blocked'] > 0 && (
             <li>
-              • {analytics.tasksByStatus['blocked']} task(s) are currently blocked. Review and resolve blockers.
+              {analytics.tasksByStatus['blocked']} task(s) are currently blocked. Review and resolve blockers.
             </li>
           )}
           {analytics.completedTasks === 0 && (
             <li>
-              • No tasks completed yet. As you complete tasks, insights will improve.
+              No tasks completed yet. As you complete tasks, insights will improve.
             </li>
           )}
           {analytics.avgAccuracy >= 80 && (
             <li>
-              • Excellent prediction accuracy! The system is learning well from your task history.
+              Excellent prediction accuracy! The system is learning well from your task history.
             </li>
           )}
         </ul>

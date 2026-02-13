@@ -48,7 +48,7 @@ func (h *TeamHandler) CreateTeam(c *fiber.Ctx) error {
 	}
 
 	if err := h.teamRepo.Create(c.Context(), team); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	memberCount, _ := h.teamRepo.CountMembers(c.Context(), team.ID)
@@ -74,7 +74,7 @@ func (h *TeamHandler) ListTeams(c *fiber.Ctx) error {
 
 	teams, err := h.teamRepo.ListByOrganization(c.Context(), orgID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	var response []models.TeamResponse
@@ -114,7 +114,7 @@ func (h *TeamHandler) GetTeam(c *fiber.Ctx) error {
 
 	team, err := h.teamRepo.GetByID(c.Context(), id)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if team == nil {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Team not found"})
@@ -164,7 +164,7 @@ func (h *TeamHandler) UpdateTeam(c *fiber.Ctx) error {
 
 	team, err := h.teamRepo.GetByID(c.Context(), id)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if team == nil || team.OrganizationID != orgID {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Team not found"})
@@ -184,7 +184,7 @@ func (h *TeamHandler) UpdateTeam(c *fiber.Ctx) error {
 	}
 
 	if err := h.teamRepo.Update(c.Context(), team); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	memberCount, _ := h.teamRepo.CountMembers(c.Context(), id)
@@ -216,7 +216,7 @@ func (h *TeamHandler) DeleteTeam(c *fiber.Ctx) error {
 
 	team, err := h.teamRepo.GetByID(c.Context(), id)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if team == nil || team.OrganizationID != orgID {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Team not found"})
@@ -229,7 +229,7 @@ func (h *TeamHandler) DeleteTeam(c *fiber.Ctx) error {
 	}
 
 	if err := h.teamRepo.Delete(c.Context(), id); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -268,7 +268,7 @@ func (h *TeamHandler) AddMember(c *fiber.Ctx) error {
 
 	team, err := h.teamRepo.GetByID(c.Context(), teamID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if team == nil || team.OrganizationID != orgID {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Team not found"})
@@ -286,7 +286,7 @@ func (h *TeamHandler) AddMember(c *fiber.Ctx) error {
 	}
 
 	if err := h.teamRepo.AddMember(c.Context(), teamID, req.UserID, req.Role); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(SuccessResponse{Message: "Member added successfully"})
@@ -313,7 +313,7 @@ func (h *TeamHandler) ListMembers(c *fiber.Ctx) error {
 
 	team, err := h.teamRepo.GetByID(c.Context(), teamID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if team == nil || team.OrganizationID != orgID {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Team not found"})
@@ -321,7 +321,7 @@ func (h *TeamHandler) ListMembers(c *fiber.Ctx) error {
 
 	members, err := h.teamRepo.GetMembers(c.Context(), teamID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.JSON(models.TeamMemberListResponse{
@@ -369,7 +369,7 @@ func (h *TeamHandler) UpdateMemberRole(c *fiber.Ctx) error {
 
 	team, err := h.teamRepo.GetByID(c.Context(), teamID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if team == nil || team.OrganizationID != orgID {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Team not found"})
@@ -401,7 +401,7 @@ func (h *TeamHandler) UpdateMemberRole(c *fiber.Ctx) error {
 	}
 
 	if err := h.teamRepo.UpdateMemberRole(c.Context(), teamID, memberUserID, req.Role); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.JSON(SuccessResponse{Message: "Role updated successfully"})
@@ -434,7 +434,7 @@ func (h *TeamHandler) RemoveMember(c *fiber.Ctx) error {
 
 	team, err := h.teamRepo.GetByID(c.Context(), teamID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if team == nil || team.OrganizationID != orgID {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Team not found"})
@@ -464,7 +464,7 @@ func (h *TeamHandler) RemoveMember(c *fiber.Ctx) error {
 	}
 
 	if err := h.teamRepo.RemoveMember(c.Context(), teamID, memberUserID); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.SendStatus(fiber.StatusNoContent)
@@ -491,7 +491,7 @@ func (h *TeamHandler) ListTeamProjects(c *fiber.Ctx) error {
 
 	team, err := h.teamRepo.GetByID(c.Context(), teamID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if team == nil || team.OrganizationID != orgID {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Team not found"})
@@ -499,7 +499,7 @@ func (h *TeamHandler) ListTeamProjects(c *fiber.Ctx) error {
 
 	projects, err := h.projectRepo.ListByTeam(c.Context(), teamID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	var response []models.ProjectResponse

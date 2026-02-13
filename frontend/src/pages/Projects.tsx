@@ -3,8 +3,10 @@ import { Link } from 'react-router-dom'
 import { projectApi } from '../services/api'
 import type { ProjectResponse, CreateProjectRequest, ProjectStatus } from '../types'
 import { FolderKanban, Plus, Archive, Trash2, AlertCircle } from 'lucide-react'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export default function Projects() {
+  useDocumentTitle('Projects')
   const [projects, setProjects] = useState<ProjectResponse[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -76,8 +78,9 @@ export default function Projects() {
 
   if (isLoading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="flex justify-center items-center h-64" aria-live="polite">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+        <span className="sr-only">Loading projects...</span>
       </div>
     )
   }
@@ -99,7 +102,7 @@ export default function Projects() {
       </div>
 
       {/* Status Filter */}
-      <div className="mb-6 flex gap-2">
+      <div className="mb-6 flex gap-2" role="group" aria-label="Filter projects by status">
         {(['active', 'archived', 'all'] as const).map((status) => (
           <button
             key={status}
@@ -109,6 +112,7 @@ export default function Projects() {
                 ? 'bg-primary-100 text-primary-700'
                 : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
             }`}
+            aria-pressed={statusFilter === status}
           >
             {status.charAt(0).toUpperCase() + status.slice(1)}
           </button>
@@ -116,7 +120,7 @@ export default function Projects() {
       </div>
 
       {error && (
-        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+        <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700" role="alert">
           <AlertCircle className="h-5 w-5" />
           {error}
         </div>
@@ -183,7 +187,7 @@ export default function Projects() {
                     <button
                       onClick={() => handleArchiveProject(projectResponse.project.id)}
                       className="p-2 text-gray-400 hover:text-yellow-600 transition-colors"
-                      title="Archive project"
+                      aria-label={`Archive ${projectResponse.project.name}`}
                     >
                       <Archive className="h-4 w-4" />
                     </button>
@@ -192,7 +196,7 @@ export default function Projects() {
                     <button
                       onClick={() => handleDeleteProject(projectResponse.project.id)}
                       className="p-2 text-gray-400 hover:text-red-600 transition-colors"
-                      title="Delete project"
+                      aria-label={`Delete ${projectResponse.project.name}`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -230,8 +234,8 @@ export default function Projects() {
       {/* Create Project Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-semibold mb-4">Create New Project</h2>
+          <div className="bg-white rounded-xl p-6 w-full max-w-md" role="dialog" aria-labelledby="create-project-title">
+            <h2 id="create-project-title" className="text-xl font-semibold mb-4">Create New Project</h2>
             <form onSubmit={handleCreateProject}>
               <div className="mb-4">
                 <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-1">

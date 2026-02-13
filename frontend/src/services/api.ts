@@ -52,6 +52,7 @@ const API_BASE = import.meta.env.VITE_API_URL || '/api/v1'
 
 const api = axios.create({
   baseURL: API_BASE,
+  timeout: 30000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -59,9 +60,12 @@ const api = axios.create({
 
 // Add auth token to requests
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().token
-  if (token) {
+  const { token, isTokenExpired, logout } = useAuthStore.getState()
+  if (token && !isTokenExpired()) {
     config.headers.Authorization = `Bearer ${token}`
+  } else if (token) {
+    logout()
+    window.location.href = '/login'
   }
   return config
 })

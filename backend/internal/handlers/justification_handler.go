@@ -59,7 +59,7 @@ func (h *JustificationHandler) CreateJustification(c *fiber.Ctx) error {
 	// Check if justification already exists
 	existing, err := h.justificationRepo.GetByTaskID(c.Context(), taskID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if existing != nil {
 		return c.Status(fiber.StatusConflict).JSON(ErrorResponse{Error: "Justification already submitted for this task"})
@@ -75,7 +75,7 @@ func (h *JustificationHandler) CreateJustification(c *fiber.Ctx) error {
 	}
 
 	if err := h.justificationRepo.Create(c.Context(), justification); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(justification)
@@ -107,7 +107,7 @@ func (h *JustificationHandler) GetJustification(c *fiber.Ctx) error {
 
 	justification, err := h.justificationRepo.GetByTaskID(c.Context(), taskID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if justification == nil {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "No justification found"})

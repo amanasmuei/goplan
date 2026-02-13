@@ -61,7 +61,7 @@ func (h *ReviewHandler) CreateReview(c *fiber.Ctx) error {
 	// Check if review already exists
 	existing, err := h.reviewRepo.GetByTaskID(c.Context(), taskID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if existing != nil {
 		return c.Status(fiber.StatusConflict).JSON(ErrorResponse{Error: "Review already submitted for this task"})
@@ -77,7 +77,7 @@ func (h *ReviewHandler) CreateReview(c *fiber.Ctx) error {
 	}
 
 	if err := h.reviewRepo.Create(c.Context(), review); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	// Update task to completed and calculate actual days
@@ -91,7 +91,7 @@ func (h *ReviewHandler) CreateReview(c *fiber.Ctx) error {
 	}
 
 	if err := h.taskRepo.Update(c.Context(), task); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 
 	return c.Status(fiber.StatusCreated).JSON(review)
@@ -123,7 +123,7 @@ func (h *ReviewHandler) GetReview(c *fiber.Ctx) error {
 
 	review, err := h.reviewRepo.GetByTaskID(c.Context(), taskID)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: err.Error()})
+		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
 	if review == nil {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "No review found"})

@@ -1,10 +1,13 @@
 import { useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
+import axios from 'axios'
 import { useAuthStore } from '../store/authStore'
 import { authApi } from '../services/api'
 import { LinkIcon, AlertCircle } from 'lucide-react'
+import { useDocumentTitle } from '../hooks/useDocumentTitle'
 
 export default function Login() {
+  useDocumentTitle('Sign In')
   const navigate = useNavigate()
   const login = useAuthStore((state) => state.login)
   const [isLoading, setIsLoading] = useState(false)
@@ -24,11 +27,14 @@ export default function Login() {
         email: formData.email,
         password: formData.password,
       })
-      login(response.token, response.user)
+      login(response.token, response.user, response.expires_at)
       navigate('/dashboard')
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } }
-      setError(error.response?.data?.error || 'Failed to sign in. Please try again.')
+      if (axios.isAxiosError(err) && err.response?.data?.error) {
+        setError(err.response.data.error)
+      } else {
+        setError('An unexpected error occurred')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -43,11 +49,14 @@ export default function Login() {
         email: 'admin@goplan.dev',
         password: 'password123',
       })
-      login(response.token, response.user)
+      login(response.token, response.user, response.expires_at)
       navigate('/dashboard')
     } catch (err: unknown) {
-      const error = err as { response?: { data?: { error?: string } } }
-      setError(error.response?.data?.error || 'Failed to sign in with demo account.')
+      if (axios.isAxiosError(err) && err.response?.data?.error) {
+        setError(err.response.data.error)
+      } else {
+        setError('An unexpected error occurred')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -65,7 +74,7 @@ export default function Login() {
         </div>
 
         {error && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700" role="alert">
             <AlertCircle className="h-5 w-5 flex-shrink-0" />
             <span className="text-sm">{error}</span>
           </div>
@@ -113,25 +122,27 @@ export default function Login() {
           </button>
         </form>
 
-        <div className="mt-6">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-200"></div>
+        {import.meta.env.VITE_ENABLE_DEMO === 'true' && (
+          <div className="mt-6">
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-white text-gray-500">or</span>
+              </div>
             </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">or</span>
-            </div>
-          </div>
 
-          <button
-            onClick={handleDemoLogin}
-            disabled={isLoading}
-            className="mt-4 w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium
-                     hover:bg-gray-200 transition-colors disabled:opacity-50"
-          >
-            Sign in with Demo Account
-          </button>
-        </div>
+            <button
+              onClick={handleDemoLogin}
+              disabled={isLoading}
+              className="mt-4 w-full bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium
+                       hover:bg-gray-200 transition-colors disabled:opacity-50"
+            >
+              Sign in with Demo Account
+            </button>
+          </div>
+        )}
 
         <p className="text-center mt-6 text-sm text-gray-600">
           Don't have an account?{' '}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -14,16 +15,18 @@ import (
 
 // Server handles MCP HTTP requests.
 type Server struct {
-	registry *ToolRegistry
-	// In-memory audit log (should be replaced with persistent storage in production)
+	registry  *ToolRegistry
+	auditRepo AuditRepository
+	// In-memory audit log kept as fallback when auditRepo is nil
 	auditLog []AuditRecord
 }
 
 // NewServer creates a new MCP server.
-func NewServer(registry *ToolRegistry) *Server {
+func NewServer(registry *ToolRegistry, auditRepo AuditRepository) *Server {
 	return &Server{
-		registry: registry,
-		auditLog: make([]AuditRecord, 0),
+		registry:  registry,
+		auditRepo: auditRepo,
+		auditLog:  make([]AuditRecord, 0),
 	}
 }
 
@@ -116,7 +119,7 @@ func (s *Server) HandleToolExecute(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		s.writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred")
 		return
 	}
 
@@ -184,7 +187,7 @@ func (s *Server) HandleApprove(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		s.writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
+		s.writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "an internal error occurred")
 		return
 	}
 
@@ -280,12 +283,12 @@ func (s *Server) getExecutionContext(r *http.Request) ExecutionContext {
 }
 
 // recordAudit records an audit entry.
-func (s *Server) recordAudit(ctx ExecutionContext, intent *MCPIntentEnvelope, action *MCPAction, result map[string]interface{}, status string) {
+func (s *Server) recordAudit(execCtx ExecutionContext, intent *MCPIntentEnvelope, action *MCPAction, result map[string]interface{}, status string) {
 	record := AuditRecord{
 		ID:          generateID(),
 		Timestamp:   time.Now().UTC(),
-		UserID:      ctx.UserID,
-		WorkspaceID: ctx.WorkspaceID,
+		UserID:      execCtx.UserID,
+		WorkspaceID: execCtx.WorkspaceID,
 		Result:      result,
 		Status:      status,
 	}
@@ -301,6 +304,14 @@ func (s *Server) recordAudit(ctx ExecutionContext, intent *MCPIntentEnvelope, ac
 		record.ActionArgs = action.Arguments
 	}
 
+	// Persist to database if audit repository is available
+	if s.auditRepo != nil {
+		if err := s.auditRepo.Create(context.Background(), &record); err != nil {
+			log.Printf("failed to persist audit record: %v", err)
+		}
+	}
+
+	// Also keep in-memory copy
 	s.auditLog = append(s.auditLog, record)
 }
 
