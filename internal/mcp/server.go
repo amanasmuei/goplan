@@ -14,7 +14,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/goplan/goplan/internal/auth"
 	"github.com/goplan/goplan/internal/domain/shared"
-	"github.com/goplan/goplan/internal/metrics"
 )
 
 // Server handles MCP HTTP requests.

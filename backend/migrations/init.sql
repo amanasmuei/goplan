@@ -168,16 +168,26 @@ CREATE TABLE task_reviews (
 
 -- Create indexes for performance
 
--- Vector similarity search index (IVFFlat)
+-- Vector similarity search index (IVFFlat) - for smaller datasets
 CREATE INDEX idx_tasks_embedding ON tasks
 USING ivfflat (description_embedding vector_cosine_ops)
 WITH (lists = 100);
+
+-- HNSW index for pgvector similarity search - dramatically faster for cosine similarity
+-- HNSW provides better recall and query performance than IVFFlat at the cost of more
+-- memory and slower build times. Preferred for production workloads.
+CREATE INDEX IF NOT EXISTS idx_tasks_embedding_hnsw ON tasks
+USING hnsw (description_embedding vector_cosine_ops)
+WITH (m = 16, ef_construction = 64);
 
 -- Composite indexes for common queries
 CREATE INDEX idx_tasks_project_status ON tasks(project_id, status);
 CREATE INDEX idx_tasks_created_by_date ON tasks(created_by, created_at DESC);
 CREATE INDEX idx_tasks_org_status ON tasks(organization_id, status);
 CREATE INDEX idx_tasks_assigned_to ON tasks(assigned_to);
+
+-- Task sorting index for newest-first queries
+CREATE INDEX idx_tasks_created_at_desc ON tasks(created_at DESC);
 
 -- Link lookup indexes
 CREATE INDEX idx_task_links_source ON task_links(source_task_id);
@@ -193,6 +203,7 @@ CREATE INDEX idx_users_email ON users(email);
 
 -- Project indexes
 CREATE INDEX idx_projects_org ON projects(organization_id);
+CREATE INDEX idx_projects_status ON projects(status);
 
 -- Team indexes
 CREATE INDEX idx_teams_org ON teams(organization_id);
@@ -200,6 +211,10 @@ CREATE INDEX idx_team_members_team ON team_members(team_id);
 CREATE INDEX idx_team_members_user ON team_members(user_id);
 CREATE INDEX idx_project_teams_project ON project_teams(project_id);
 CREATE INDEX idx_project_teams_team ON project_teams(team_id);
+
+-- Composite index on project_teams for efficient team-to-project lookups with status join
+-- Supports queries like: SELECT p.* FROM projects p JOIN project_teams pt ON p.id = pt.project_id WHERE pt.team_id = $1 AND p.status = $2
+CREATE INDEX idx_project_teams_team_project ON project_teams(team_id, project_id);
 
 -- Acknowledgment action type
 CREATE TYPE acknowledgment_action AS ENUM ('accept', 'modify', 'disagree');

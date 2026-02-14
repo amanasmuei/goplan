@@ -31,6 +31,7 @@ import (
 	"github.com/goplan/goplan/internal/metrics"
 	"github.com/goplan/goplan/internal/postgres"
 	"github.com/goplan/goplan/internal/ratelimit"
+	goplanredis "github.com/goplan/goplan/internal/redis"
 	"github.com/goplan/goplan/internal/repository"
 	"github.com/goplan/goplan/internal/validation"
 )
@@ -127,6 +128,29 @@ func main() {
 	// Create repositories
 	repos := initRepositories(db)
 
+	// Initialize Redis (optional — falls back to in-memory rate limiting if unavailable)
+	var redisClient *goplanredis.Client
+	if cfg.Redis.URL != "" {
+		rc, err := goplanredis.New(goplanredis.Config{
+			URL:      cfg.Redis.URL,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+		if err != nil {
+			logger.Warn("Failed to connect to Redis, falling back to in-memory backends",
+				"error", err,
+			)
+		} else {
+			redisClient = rc
+			logger.Info("Connected to Redis", "url", cfg.Redis.URL)
+		}
+	} else {
+		logger.Info("Redis not configured (REDIS_URL empty), using in-memory backends")
+	}
+	if redisClient != nil {
+		defer redisClient.Close()
+	}
+
 	// Initialize JWT auth
 	jwtAuth := auth.NewJWT(auth.JWTConfig{
 		Secret:          cfg.Auth.JWTSecret,
@@ -150,8 +174,8 @@ func main() {
 		DevUserID: "",
 	})
 
-	// Initialize rate limiter
-	rateLimiter := ratelimit.New(ratelimit.Config{
+	// Initialize rate limiter (uses Redis when available, in-memory otherwise)
+	rateLimitCfg := ratelimit.Config{
 		DefaultRequestsPerSecond: cfg.Security.RateLimitRequests,
 		DefaultBurstSize:         cfg.Security.RateLimitRequests * 2,
 		IPRequestsPerSecond:      50,
@@ -159,7 +183,11 @@ func main() {
 		UserRequestsPerSecond:    100,
 		UserBurstSize:            200,
 		CleanupInterval:          5 * time.Minute,
-	}, logger, appMetrics)
+	}
+	if redisClient != nil {
+		rateLimitCfg.RedisClient = redisClient.RateLimitAdapter()
+	}
+	rateLimiter := ratelimit.New(rateLimitCfg, logger, appMetrics)
 	defer rateLimiter.Stop()
 
 	// Initialize audit logger
@@ -179,6 +207,28 @@ func main() {
 	healthHandler.AddChecker(health.DatabaseChecker("database", func(ctx context.Context) error {
 		return db.Ping(ctx)
 	}))
+	healthHandler.AddChecker(health.PoolStatsChecker("database_pool", func() *health.PoolStats {
+		s := db.Stats()
+		return &health.PoolStats{
+			AcquireCount:         s.AcquireCount(),
+			AcquireDuration:      s.AcquireDuration(),
+			AcquiredConns:        s.AcquiredConns(),
+			CanceledAcquireCount: s.CanceledAcquireCount(),
+			ConstructingConns:    s.ConstructingConns(),
+			EmptyAcquireCount:    s.EmptyAcquireCount(),
+			IdleConns:            s.IdleConns(),
+			MaxConns:             s.MaxConns(),
+			TotalConns:           s.TotalConns(),
+			NewConnsCount:        s.NewConnsCount(),
+			MaxLifetimeDestroy:   s.MaxLifetimeDestroyCount(),
+			MaxIdleDestroy:       s.MaxIdleDestroyCount(),
+		}
+	}, 0.8)) // Alert when pool is 80% utilized
+	if redisClient != nil {
+		healthHandler.AddChecker(health.RedisChecker("redis", func(ctx context.Context) error {
+			return redisClient.Ping(ctx)
+		}))
+	}
 	healthHandler.AddChecker(health.MemoryChecker(1024 * 1024 * 1024)) // 1GB
 	healthHandler.AddChecker(health.GoroutineChecker(10000))
 
@@ -299,6 +349,10 @@ func main() {
 	}
 
 	// Clean up resources
+	if redisClient != nil {
+		logger.Info("Closing Redis connection")
+		redisClient.Close()
+	}
 	logger.Info("Closing database connections")
 	db.Close()
 

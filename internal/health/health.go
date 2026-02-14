@@ -4,6 +4,7 @@ package health
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"runtime"
 	"sync"
@@ -360,6 +361,67 @@ func GoroutineChecker(maxGoroutines int) Checker {
 			return StatusDegraded, "high goroutine count", nil
 		}
 		return StatusHealthy, "", nil
+	})
+}
+
+// PoolStats holds connection pool statistics for monitoring.
+type PoolStats struct {
+	AcquireCount         int64         `json:"acquire_count"`
+	AcquireDuration      time.Duration `json:"acquire_duration_ms"`
+	AcquiredConns        int32         `json:"acquired_conns"`
+	CanceledAcquireCount int64         `json:"canceled_acquire_count"`
+	ConstructingConns    int32         `json:"constructing_conns"`
+	EmptyAcquireCount    int64         `json:"empty_acquire_count"`
+	IdleConns            int32         `json:"idle_conns"`
+	MaxConns             int32         `json:"max_conns"`
+	TotalConns           int32         `json:"total_conns"`
+	NewConnsCount        int64         `json:"new_conns_count"`
+	MaxLifetimeDestroy   int64         `json:"max_lifetime_destroy_count"`
+	MaxIdleDestroy       int64         `json:"max_idle_destroy_count"`
+}
+
+// PoolStatsFn is a function that returns connection pool statistics.
+// This matches the signature of pgxpool.Stat fields, allowing callers to
+// provide a function like:
+//
+//	func() *PoolStats {
+//	    s := pool.Stat()
+//	    return &health.PoolStats{
+//	        AcquireCount:         s.AcquireCount(),
+//	        ...
+//	    }
+//	}
+type PoolStatsFn func() *PoolStats
+
+// PoolStatsChecker creates a health checker that monitors database connection pool
+// statistics. It reports degraded status when pool utilization exceeds the given
+// threshold (0.0 to 1.0), and includes detailed pool metrics in the health response.
+func PoolStatsChecker(name string, statsFn PoolStatsFn, utilizationThreshold float64) Checker {
+	return NewChecker(name, func(ctx context.Context) (Status, string, error) {
+		stats := statsFn()
+		if stats == nil {
+			return StatusUnhealthy, "unable to retrieve pool stats", nil
+		}
+
+		utilization := float64(0)
+		if stats.MaxConns > 0 {
+			utilization = float64(stats.AcquiredConns) / float64(stats.MaxConns)
+		}
+
+		msg := fmt.Sprintf(
+			"total=%d acquired=%d idle=%d max=%d utilization=%.1f%%",
+			stats.TotalConns,
+			stats.AcquiredConns,
+			stats.IdleConns,
+			stats.MaxConns,
+			utilization*100,
+		)
+
+		if utilization >= utilizationThreshold {
+			return StatusDegraded, "high pool utilization: " + msg, nil
+		}
+
+		return StatusHealthy, msg, nil
 	})
 }
 

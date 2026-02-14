@@ -19,12 +19,29 @@ export default defineConfig({
     },
   },
   build: {
+    // Target modern browsers for smaller bundle size and modern JS features
+    target: 'es2020',
+    // Increase chunk size warning limit (default 500kB)
+    chunkSizeWarningLimit: 600,
+    // Enable source maps for production debugging (can be disabled if not needed)
+    sourcemap: false,
+    // Minification settings
+    minify: 'esbuild',
+    // CSS code splitting
+    cssCodeSplit: true,
     rollupOptions: {
       output: {
         manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          query: ['@tanstack/react-query'],
-          ui: ['lucide-react'],
+          // Core React runtime - changes infrequently, cached long-term
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // Data fetching layer
+          'vendor-query': ['@tanstack/react-query'],
+          // State management
+          'vendor-state': ['zustand'],
+          // UI icons library
+          'vendor-ui': ['lucide-react'],
+          // HTTP client
+          'vendor-http': ['axios'],
         },
       },
     },
