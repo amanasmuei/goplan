@@ -104,7 +104,7 @@ func (h *AuthHandler) Signup(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Hash password
-	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	if err != nil {
 		h.WriteInternalError(w)
 		return

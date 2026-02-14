@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -390,7 +391,7 @@ func (s *SafetyChecker) StartCleanupWorker(ctx context.Context, interval time.Du
 			case <-ticker.C:
 				removed := s.RemoveExpiredRequests()
 				if removed > 0 {
-					fmt.Printf("Cleaned up %d expired approval requests\n", removed)
+					slog.Info("cleaned up expired approval requests", "count", removed)
 				}
 			}
 		}

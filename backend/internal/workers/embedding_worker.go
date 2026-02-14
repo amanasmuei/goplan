@@ -2,7 +2,7 @@ package workers
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -41,14 +41,14 @@ func NewEmbeddingWorker(pool *pgxpool.Pool, embeddingClient *services.EmbeddingC
 func (w *EmbeddingWorker) Start() {
 	w.wg.Add(1)
 	go w.run()
-	log.Println("Embedding worker started")
+	slog.Info("Embedding worker started")
 }
 
 func (w *EmbeddingWorker) Stop() {
 	w.cancel()
 	close(w.stopCh)
 	w.wg.Wait()
-	log.Println("Embedding worker stopped")
+	slog.Info("Embedding worker stopped")
 }
 
 func (w *EmbeddingWorker) run() {
@@ -73,7 +73,7 @@ func (w *EmbeddingWorker) run() {
 func (w *EmbeddingWorker) processTasksWithoutEmbeddings() {
 	// Concurrency guard: skip if a previous batch is still processing
 	if !w.processing.CompareAndSwap(false, true) {
-		log.Println("Skipping embedding batch: previous batch still processing")
+		slog.Info("Skipping embedding batch: previous batch still processing")
 		return
 	}
 	defer w.processing.Store(false)
@@ -85,7 +85,7 @@ func (w *EmbeddingWorker) processTasksWithoutEmbeddings() {
 	// Find tasks without embeddings
 	tasks, err := w.findTasksWithoutEmbeddings(ctx, w.batchSize)
 	if err != nil {
-		log.Printf("Error finding tasks without embeddings: %v", err)
+		slog.Error("Error finding tasks without embeddings", "error", err)
 		return
 	}
 
@@ -93,7 +93,7 @@ func (w *EmbeddingWorker) processTasksWithoutEmbeddings() {
 		return
 	}
 
-	log.Printf("Processing %d tasks without embeddings", len(tasks))
+	slog.Info("Processing tasks without embeddings", "count", len(tasks))
 
 	// Prepare texts for batch embedding
 	texts := make([]string, len(tasks))
@@ -104,7 +104,7 @@ func (w *EmbeddingWorker) processTasksWithoutEmbeddings() {
 	// Generate batch embeddings
 	embeddings, err := w.embeddingClient.GenerateBatchEmbeddings(ctx, texts)
 	if err != nil {
-		log.Printf("Error generating batch embeddings: %v", err)
+		slog.Error("Error generating batch embeddings", "error", err)
 		// Fall back to individual processing
 		w.processIndividually(ctx, tasks)
 		return
@@ -114,12 +114,12 @@ func (w *EmbeddingWorker) processTasksWithoutEmbeddings() {
 	for i, task := range tasks {
 		if i < len(embeddings) {
 			if err := w.updateTaskEmbedding(ctx, task.ID, embeddings[i]); err != nil {
-				log.Printf("Error updating embedding for task %s: %v", task.ID, err)
+				slog.Error("Error updating embedding for task", "task_id", task.ID, "error", err)
 			}
 		}
 	}
 
-	log.Printf("Successfully updated embeddings for %d tasks", len(tasks))
+	slog.Info("Successfully updated embeddings", "count", len(tasks))
 }
 
 func (w *EmbeddingWorker) processIndividually(ctx context.Context, tasks []taskRow) {
@@ -127,18 +127,18 @@ func (w *EmbeddingWorker) processIndividually(ctx context.Context, tasks []taskR
 		// Check for context cancellation between iterations
 		select {
 		case <-ctx.Done():
-			log.Printf("Embedding worker: context cancelled during individual processing")
+			slog.Info("Embedding worker: context cancelled during individual processing")
 			return
 		default:
 		}
 
 		embedding, err := w.embeddingClient.GenerateEmbedding(ctx, task.Title+" "+task.Description)
 		if err != nil {
-			log.Printf("Error generating embedding for task %s: %v", task.ID, err)
+			slog.Error("Error generating embedding for task", "task_id", task.ID, "error", err)
 			continue
 		}
 		if err := w.updateTaskEmbedding(ctx, task.ID, embedding); err != nil {
-			log.Printf("Error updating embedding for task %s: %v", task.ID, err)
+			slog.Error("Error updating embedding for task", "task_id", task.ID, "error", err)
 		}
 	}
 }

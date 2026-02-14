@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"os"
 	"os/signal"
 	"strings"
@@ -40,7 +40,7 @@ import (
 func main() {
 	// Load environment variables
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
+		slog.Info("No .env file found, using environment variables")
 	}
 
 	// Load configuration
@@ -48,24 +48,27 @@ func main() {
 
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
-		log.Fatalf("Configuration validation failed: %v", err)
+		slog.Error("Configuration validation failed", "error", err)
+		os.Exit(1)
 	}
 
 	// Startup validation warnings
 	if cfg.Server.AllowOrigins == "*" {
-		log.Println("[WARNING] ALLOW_ORIGINS is set to '*' (wildcard). This allows any origin and should not be used in production.")
+		slog.Warn("ALLOW_ORIGINS is set to '*' (wildcard), should not be used in production")
 	}
 	if cfg.Server.Environment == "production" && strings.Contains(cfg.Server.AllowOrigins, "localhost") {
-		log.Println("[WARNING] ALLOW_ORIGINS contains 'localhost' in production environment. This is likely a misconfiguration.")
+		slog.Warn("ALLOW_ORIGINS contains 'localhost' in production environment")
 	}
 	if cfg.Server.Environment == "production" && cfg.Database.SSLMode == "disable" {
-		log.Fatalf("DB_SSLMODE must not be 'disable' in production")
+		slog.Error("DB_SSLMODE must not be 'disable' in production")
+		os.Exit(1)
 	}
 
 	// Connect to database
 	db, err := database.New(&cfg.Database)
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		slog.Error("Failed to connect to database", "error", err)
+		os.Exit(1)
 	}
 
 	// Initialize repositories
@@ -82,7 +85,7 @@ func main() {
 	var embeddingClient *services.EmbeddingClient
 	if cfg.Embedding.ServiceURL != "" {
 		embeddingClient = services.NewEmbeddingClient(cfg.Embedding.ServiceURL)
-		log.Printf("Embedding service configured: %s", cfg.Embedding.ServiceURL)
+		slog.Info("Embedding service configured", "url", cfg.Embedding.ServiceURL)
 	}
 
 	// Initialize services
@@ -152,7 +155,7 @@ func main() {
 	// CORS hardening: reject wildcard origins when credentials are enabled
 	allowOrigins := cfg.Server.AllowOrigins
 	if allowOrigins == "*" {
-		log.Println("[WARNING] CORS: AllowOrigins is '*' but AllowCredentials is true. Wildcard origin with credentials is a security violation. Falling back to 'http://localhost:3000'.")
+		slog.Warn("CORS: AllowOrigins is '*' with AllowCredentials, falling back to localhost")
 		allowOrigins = "http://localhost:3000"
 	}
 	app.Use(cors.New(cors.Config{
@@ -278,7 +281,8 @@ func main() {
 	// Graceful shutdown
 	go func() {
 		if err := app.Listen(":" + cfg.Server.Port); err != nil {
-			log.Fatalf("Failed to start server: %v", err)
+			slog.Error("Failed to start server", "error", err)
+			os.Exit(1)
 		}
 	}()
 
@@ -286,7 +290,7 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down server...")
+	slog.Info("Shutting down server...")
 
 	// Stop embedding worker
 	if embeddingWorker != nil {
@@ -297,13 +301,14 @@ func main() {
 	defer shutdownCancel()
 
 	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
-		log.Fatalf("Server forced to shutdown: %v", err)
+		slog.Error("Server forced to shutdown", "error", err)
+		os.Exit(1)
 	}
 
 	// Explicitly close database connection pool
 	db.Close()
 
-	log.Println("Server exited properly")
+	slog.Info("Server exited properly")
 }
 
 func customErrorHandler(c *fiber.Ctx, err error) error {

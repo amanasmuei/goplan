@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"math"
 	"time"
 
@@ -111,20 +111,20 @@ func (s *TaskService) CreateTask(ctx context.Context, req models.CreateTaskReque
 		}
 		embedding, err := s.embeddingService.GenerateEmbedding(bgCtx, taskTitle+" "+taskDescription)
 		if err != nil {
-			log.Printf("async embedding generation failed for task %s: %v", taskID, err)
+			slog.Error("async embedding generation failed", "task_id", taskID, "error", err)
 			return
 		}
 
 		// Update task with embedding
 		if err := s.taskRepo.UpdateEmbedding(bgCtx, taskID, embedding); err != nil {
-			log.Printf("async embedding update failed for task %s: %v", taskID, err)
+			slog.Error("async embedding update failed", "task_id", taskID, "error", err)
 			return
 		}
 
 		// Find similar tasks
 		similar, err := s.taskRepo.FindSimilar(bgCtx, embedding, orgID, &taskID, 5)
 		if err != nil {
-			log.Printf("async FindSimilar failed for task %s: %v", taskID, err)
+			slog.Error("async FindSimilar failed", "task_id", taskID, "error", err)
 			return
 		}
 
@@ -135,7 +135,7 @@ func (s *TaskService) CreateTask(ctx context.Context, req models.CreateTaskReque
 			// Update task with predictions
 			if predictions != nil {
 				if err := s.taskRepo.UpdatePredictions(bgCtx, taskID, predictions.PredictedDaysLow, predictions.PredictedDaysHigh, predictions.Confidence); err != nil {
-					log.Printf("async UpdatePredictions failed for task %s: %v", taskID, err)
+					slog.Error("async UpdatePredictions failed", "task_id", taskID, "error", err)
 				}
 			}
 
@@ -144,13 +144,13 @@ func (s *TaskService) CreateTask(ctx context.Context, req models.CreateTaskReque
 			fullAssessment := s.assessPlanningQuality(tempTask, predictions)
 			if fullAssessment != nil {
 				if err := s.taskRepo.UpdatePlanningScore(bgCtx, taskID, fullAssessment.Score); err != nil {
-					log.Printf("async UpdatePlanningScore failed for task %s: %v", taskID, err)
+					slog.Error("async UpdatePlanningScore failed", "task_id", taskID, "error", err)
 				}
 			}
 		} else if assessment != nil {
 			// No similar tasks, just save the basic planning score
 			if err := s.taskRepo.UpdatePlanningScore(bgCtx, taskID, assessment.Score); err != nil {
-				log.Printf("async UpdatePlanningScore failed for task %s: %v", taskID, err)
+				slog.Error("async UpdatePlanningScore failed", "task_id", taskID, "error", err)
 			}
 		}
 	}()
