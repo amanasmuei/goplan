@@ -105,6 +105,7 @@ htmlcov/
 # =========================
 # Build & Artifacts
 # =========================
+server
 *.log
 *.tmp
 *.temp
