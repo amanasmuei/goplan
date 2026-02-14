@@ -72,7 +72,9 @@ func (h *TeamHandler) ListTeams(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{Error: err.Error()})
 	}
 
-	teams, err := h.teamRepo.ListByOrganization(c.Context(), orgID)
+	limit := c.QueryInt("limit", 100)
+	offset := c.QueryInt("offset", 0)
+	teams, err := h.teamRepo.ListByOrganization(c.Context(), orgID, limit, offset)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}
@@ -497,7 +499,9 @@ func (h *TeamHandler) ListTeamProjects(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Team not found"})
 	}
 
-	projects, err := h.projectRepo.ListByTeam(c.Context(), teamID)
+	projLimit := c.QueryInt("limit", 100)
+	projOffset := c.QueryInt("offset", 0)
+	projects, err := h.projectRepo.ListByTeam(c.Context(), teamID, projLimit, projOffset)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(ErrorResponse{Error: "an internal error occurred"})
 	}

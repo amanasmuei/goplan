@@ -145,8 +145,8 @@ func (r *TaskRepository) List(ctx context.Context, filters models.TaskFilters) (
 		argIdx++
 	}
 	if filters.Search != "" {
-		conditions = append(conditions, fmt.Sprintf("(title ILIKE $%d OR description ILIKE $%d)", argIdx, argIdx))
-		args = append(args, "%"+filters.Search+"%")
+		conditions = append(conditions, fmt.Sprintf("(to_tsvector('english', coalesce(title, '') || ' ' || coalesce(description, '')) @@ plainto_tsquery('english', $%d))", argIdx))
+		args = append(args, filters.Search)
 		argIdx++
 	}
 
@@ -285,6 +285,45 @@ func (r *TaskRepository) UpdatePredictions(ctx context.Context, id uuid.UUID, lo
 		return fmt.Errorf("failed to update predictions: %w", err)
 	}
 	return nil
+}
+
+// GetByIDs retrieves multiple tasks by their IDs in a single query.
+// This avoids N+1 query patterns when fetching multiple tasks.
+func (r *TaskRepository) GetByIDs(ctx context.Context, ids []uuid.UUID) ([]models.Task, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+
+	query := `
+		SELECT id, title, description, status, created_by, assigned_to,
+			project_id, organization_id, estimated_days, predicted_days_low,
+			predicted_days_high, prediction_confidence, planning_quality_score,
+			acknowledged_at, started_at, completed_at, actual_days, tags,
+			created_at, updated_at
+		FROM tasks WHERE id = ANY($1)`
+
+	rows, err := r.db.Query(ctx, query, ids)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get tasks by IDs: %w", err)
+	}
+	defer rows.Close()
+
+	var tasks []models.Task
+	for rows.Next() {
+		var task models.Task
+		err := rows.Scan(
+			&task.ID, &task.Title, &task.Description, &task.Status, &task.CreatedBy,
+			&task.AssignedTo, &task.ProjectID, &task.OrganizationID, &task.EstimatedDays,
+			&task.PredictedDaysLow, &task.PredictedDaysHigh, &task.PredictionConfidence,
+			&task.PlanningQualityScore, &task.AcknowledgedAt, &task.StartedAt,
+			&task.CompletedAt, &task.ActualDays, &task.Tags, &task.CreatedAt, &task.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan task: %w", err)
+		}
+		tasks = append(tasks, task)
+	}
+	return tasks, nil
 }
 
 func (r *TaskRepository) UpdatePlanningScore(ctx context.Context, id uuid.UUID, score float64) error {

@@ -11,6 +11,39 @@ env:
   NODE_VERSION: '20'
 
 jobs:
+  mcp-server-test:
+    name: MCP Server Tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: goplan
+          POSTGRES_PASSWORD: goplan
+          POSTGRES_DB: goplan_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+          cache-dependency-path: go.sum
+      - name: Run MCP Server tests
+        run: go test -v -race -coverprofile=mcp-coverage.out ./...
+        env:
+          DATABASE_URL: postgres://goplan:goplan@localhost:5432/goplan_test?sslmode=disable
+      - name: Upload MCP coverage
+        uses: codecov/codecov-action@v4
+        with:
+          file: mcp-coverage.out
+          flags: mcp-server
+
   backend-test:
     name: Backend Tests
     runs-on: ubuntu-latest
@@ -148,7 +181,7 @@ jobs:
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: [backend-test, backend-lint, frontend-build]
+    needs: [mcp-server-test, backend-test, backend-lint, frontend-build]
     if: github.event_name == 'push'
 
     steps:

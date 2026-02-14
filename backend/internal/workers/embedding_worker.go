@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -19,15 +20,21 @@ type EmbeddingWorker struct {
 	batchSize       int
 	stopCh          chan struct{}
 	wg              sync.WaitGroup
+	processing      atomic.Bool
+	ctx             context.Context
+	cancel          context.CancelFunc
 }
 
 func NewEmbeddingWorker(pool *pgxpool.Pool, embeddingClient *services.EmbeddingClient) *EmbeddingWorker {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &EmbeddingWorker{
 		pool:            pool,
 		embeddingClient: embeddingClient,
 		interval:        5 * time.Minute,
 		batchSize:       50,
 		stopCh:          make(chan struct{}),
+		ctx:             ctx,
+		cancel:          cancel,
 	}
 }
 
@@ -38,6 +45,7 @@ func (w *EmbeddingWorker) Start() {
 }
 
 func (w *EmbeddingWorker) Stop() {
+	w.cancel()
 	close(w.stopCh)
 	w.wg.Wait()
 	log.Println("Embedding worker stopped")
@@ -63,7 +71,15 @@ func (w *EmbeddingWorker) run() {
 }
 
 func (w *EmbeddingWorker) processTasksWithoutEmbeddings() {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	// Concurrency guard: skip if a previous batch is still processing
+	if !w.processing.CompareAndSwap(false, true) {
+		log.Println("Skipping embedding batch: previous batch still processing")
+		return
+	}
+	defer w.processing.Store(false)
+
+	// Use the worker's context as parent so cancellation propagates on Stop()
+	ctx, cancel := context.WithTimeout(w.ctx, 10*time.Minute)
 	defer cancel()
 
 	// Find tasks without embeddings
@@ -108,6 +124,14 @@ func (w *EmbeddingWorker) processTasksWithoutEmbeddings() {
 
 func (w *EmbeddingWorker) processIndividually(ctx context.Context, tasks []taskRow) {
 	for _, task := range tasks {
+		// Check for context cancellation between iterations
+		select {
+		case <-ctx.Done():
+			log.Printf("Embedding worker: context cancelled during individual processing")
+			return
+		default:
+		}
+
 		embedding, err := w.embeddingClient.GenerateEmbedding(ctx, task.Title+" "+task.Description)
 		if err != nil {
 			log.Printf("Error generating embedding for task %s: %v", task.ID, err)

@@ -83,9 +83,9 @@ func (r *ProjectRepository) Update(ctx context.Context, project *models.Project)
 	return nil
 }
 
-// Delete deletes a project by ID (hard delete)
+// Delete soft-deletes a project by setting its status to archived.
 func (r *ProjectRepository) Delete(ctx context.Context, id uuid.UUID) error {
-	query := `DELETE FROM projects WHERE id = $1`
+	query := `UPDATE projects SET status = 'archived', updated_at = NOW() WHERE id = $1`
 	result, err := r.db.Exec(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete project: %w", err)
@@ -185,16 +185,28 @@ func (r *ProjectRepository) ListByOrganization(ctx context.Context, filters mode
 	return projects, total, nil
 }
 
-// ListByTeam lists all projects assigned to a team
-func (r *ProjectRepository) ListByTeam(ctx context.Context, teamID uuid.UUID) ([]models.Project, error) {
+// ListByTeam lists projects assigned to a team with pagination.
+// limit defaults to 100, max 200. offset defaults to 0.
+func (r *ProjectRepository) ListByTeam(ctx context.Context, teamID uuid.UUID, limit, offset int) ([]models.Project, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT p.id, p.name, p.description, COALESCE(p.status, 'active'), p.organization_id, p.created_by, p.created_at, p.updated_at
 		FROM projects p
 		JOIN project_teams pt ON p.id = pt.project_id
 		WHERE pt.team_id = $1
-		ORDER BY p.name ASC`
+		ORDER BY p.name ASC
+		LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(ctx, query, teamID)
+	rows, err := r.db.Query(ctx, query, teamID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list team projects: %w", err)
 	}

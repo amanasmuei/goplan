@@ -1,0 +1,21 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: goplan-api-pdb
+  namespace: goplan
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: goplan-api
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: goplan-frontend-pdb
+  namespace: goplan
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: goplan-frontend

@@ -204,7 +204,7 @@ func Load() (*Config, error) {
 
 	// Security configuration
 	cfg.Security = SecurityConfig{
-		CORSOrigins:       getEnvAsSliceOrDefault("CORS_ORIGINS", []string{"*"}),
+		CORSOrigins:       getEnvAsSliceOrDefault("CORS_ORIGINS", []string{"http://localhost:3000"}),
 		RateLimitEnabled:  getEnvAsBoolOrDefault("RATE_LIMIT_ENABLED", true),
 		RateLimitRequests: getEnvAsIntOrDefault("RATE_LIMIT_REQUESTS", 100),
 		RateLimitWindow:   getEnvAsDurationOrDefault("RATE_LIMIT_WINDOW", 1*time.Minute),

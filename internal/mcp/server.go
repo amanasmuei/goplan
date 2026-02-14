@@ -8,9 +8,13 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
+	"github.com/goplan/goplan/internal/auth"
 	"github.com/goplan/goplan/internal/domain/shared"
+	"github.com/goplan/goplan/internal/metrics"
 )
 
 // Server handles MCP HTTP requests.
@@ -35,6 +39,17 @@ func (s *Server) HandleIntent(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
+	}
+
+	// Limit request body size to 1MB
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	// Validate Content-Type
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		if !strings.HasPrefix(ct, "application/json") {
+			http.Error(w, `{"error":"Content-Type must be application/json"}`, http.StatusUnsupportedMediaType)
+			return
+		}
 	}
 
 	var envelope MCPIntentEnvelope
@@ -88,6 +103,17 @@ func (s *Server) HandleToolExecute(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
+	}
+
+	// Limit request body size to 1MB
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	// Validate Content-Type
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		if !strings.HasPrefix(ct, "application/json") {
+			http.Error(w, `{"error":"Content-Type must be application/json"}`, http.StatusUnsupportedMediaType)
+			return
+		}
 	}
 
 	var action MCPAction
@@ -153,6 +179,17 @@ func (s *Server) HandleApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Limit request body size to 1MB
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	// Validate Content-Type
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		if !strings.HasPrefix(ct, "application/json") {
+			http.Error(w, `{"error":"Content-Type must be application/json"}`, http.StatusUnsupportedMediaType)
+			return
+		}
+	}
+
 	var req struct {
 		IntentID string                 `json:"intentId"`
 		Action   MCPAction              `json:"action"`
@@ -206,6 +243,17 @@ func (s *Server) HandleReject(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
+	}
+
+	// Limit request body size to 1MB
+	r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+
+	// Validate Content-Type
+	if ct := r.Header.Get("Content-Type"); ct != "" {
+		if !strings.HasPrefix(ct, "application/json") {
+			http.Error(w, `{"error":"Content-Type must be application/json"}`, http.StatusUnsupportedMediaType)
+			return
+		}
 	}
 
 	var req struct {
@@ -273,8 +321,20 @@ func (s *Server) routeIntent(intentType string) string {
 	}
 }
 
-// getExecutionContext extracts execution context from request headers.
+// getExecutionContext extracts execution context from the authenticated user
+// stored in the request context by the auth middleware. Falls back to raw
+// HTTP headers only when no auth context is available (e.g. dev mode without JWT).
 func (s *Server) getExecutionContext(r *http.Request) ExecutionContext {
+	// First, try to extract from the authenticated context set by auth middleware
+	if user := auth.GetUser(r.Context()); user != nil {
+		return ExecutionContext{
+			UserID:      user.ID,
+			WorkspaceID: user.WorkspaceID,
+			Role:        user.Role,
+		}
+	}
+
+	// Fall back to headers only if auth context is not available
 	return ExecutionContext{
 		UserID:      r.Header.Get("X-User-ID"),
 		WorkspaceID: r.Header.Get("X-Workspace-ID"),
@@ -306,13 +366,21 @@ func (s *Server) recordAudit(execCtx ExecutionContext, intent *MCPIntentEnvelope
 
 	// Persist to database if audit repository is available
 	if s.auditRepo != nil {
-		if err := s.auditRepo.Create(context.Background(), &record); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := s.auditRepo.Create(ctx, &record); err != nil {
 			log.Printf("failed to persist audit record: %v", err)
 		}
 	}
 
-	// Also keep in-memory copy
-	s.auditLog = append(s.auditLog, record)
+	// Only keep in-memory copy when no persistent audit repo is available
+	if s.auditRepo == nil {
+		s.auditLog = append(s.auditLog, record)
+		// Cap in-memory audit log at 10000 entries to prevent unbounded growth
+		if len(s.auditLog) > 10000 {
+			s.auditLog = s.auditLog[len(s.auditLog)-10000:]
+		}
+	}
 }
 
 // writeJSON writes a JSON response.
@@ -351,9 +419,9 @@ func (s *Server) domainErrorToStatus(err *shared.DomainError) int {
 	}
 }
 
-// generateID generates a simple ID (should use UUID in production).
+// generateID generates a unique ID using UUID v4.
 func generateID() string {
-	return fmt.Sprintf("%d", time.Now().UnixNano())
+	return uuid.New().String()
 }
 
 // WithRegistry returns a handler function that injects the registry.

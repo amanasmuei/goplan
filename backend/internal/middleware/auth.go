@@ -56,24 +56,50 @@ func (m *AuthMiddleware) Authenticate() fiber.Handler {
 			})
 		}
 
-		userID, err := uuid.Parse(claims["user_id"].(string))
+		userIDStr, ok := claims["user_id"].(string)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "Invalid token claims",
+			})
+		}
+		userID, err := uuid.Parse(userIDStr)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "Invalid user ID in token",
 			})
 		}
 
-		orgID, err := uuid.Parse(claims["organization_id"].(string))
+		orgIDStr, ok := claims["organization_id"].(string)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "Invalid token claims",
+			})
+		}
+		orgID, err := uuid.Parse(orgIDStr)
 		if err != nil {
 			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 				"error": "Invalid organization ID in token",
 			})
 		}
 
+		emailStr, ok := claims["email"].(string)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "Invalid token claims",
+			})
+		}
+
+		roleStr, ok := claims["role"].(string)
+		if !ok {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "Invalid token claims",
+			})
+		}
+
 		c.Locals("user_id", userID)
 		c.Locals("organization_id", orgID)
-		c.Locals("email", claims["email"])
-		c.Locals("role", models.UserRole(claims["role"].(string)))
+		c.Locals("email", emailStr)
+		c.Locals("role", models.UserRole(roleStr))
 
 		return c.Next()
 	}
@@ -88,7 +114,12 @@ func (m *AuthMiddleware) RequireRole(roles ...models.UserRole) fiber.Handler {
 			})
 		}
 
-		role := userRole.(models.UserRole)
+		role, ok := userRole.(models.UserRole)
+		if !ok {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "Access denied",
+			})
+		}
 		for _, r := range roles {
 			if r == role {
 				return c.Next()
@@ -109,6 +140,9 @@ func GenerateToken(claims *models.AuthClaims, secret string, expirationHours int
 		"role":            string(claims.Role),
 		"organization_id": claims.OrganizationID.String(),
 		"exp":             time.Now().Add(time.Duration(expirationHours) * time.Hour).Unix(),
+		"type":            "access",
+		"iss":             "goplan",
+		"iat":             time.Now().Unix(),
 	})
 
 	return token.SignedString([]byte(secret))

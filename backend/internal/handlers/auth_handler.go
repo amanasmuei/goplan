@@ -103,13 +103,17 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 	}
 
 	// Generate JWT token
-	expiresAt := time.Now().Add(time.Duration(h.jwtConfig.ExpirationHours) * time.Hour)
+	now := time.Now()
+	expiresAt := now.Add(time.Duration(h.jwtConfig.ExpirationHours) * time.Hour)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id":         user.ID.String(),
 		"email":           user.Email,
 		"role":            string(user.Role),
 		"organization_id": user.OrganizationID.String(),
 		"exp":             expiresAt.Unix(),
+		"type":            "access",
+		"iss":             "goplan",
+		"iat":             now.Unix(),
 	})
 
 	tokenString, err := token.SignedString([]byte(h.jwtConfig.Secret))
@@ -164,6 +168,12 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 		})
 	}
 
+	if len(req.Password) > 72 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Password must not exceed 72 characters",
+		})
+	}
+
 	// Check if email already exists
 	exists, err := h.userRepo.EmailExists(c.Context(), req.Email)
 	if err != nil {
@@ -186,7 +196,7 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	}
 
 	// Hash password
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), 12)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to process password",
@@ -208,13 +218,17 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 	}
 
 	// Generate JWT token
-	expiresAt := time.Now().Add(time.Duration(h.jwtConfig.ExpirationHours) * time.Hour)
+	now := time.Now()
+	expiresAt := now.Add(time.Duration(h.jwtConfig.ExpirationHours) * time.Hour)
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id":         user.ID.String(),
 		"email":           user.Email,
 		"role":            string(user.Role),
 		"organization_id": user.OrganizationID.String(),
 		"exp":             expiresAt.Unix(),
+		"type":            "access",
+		"iss":             "goplan",
+		"iat":             now.Unix(),
 	})
 
 	tokenString, err := token.SignedString([]byte(h.jwtConfig.Secret))
@@ -292,7 +306,9 @@ func (h *AuthHandler) ListUsers(c *fiber.Ctx) error {
 		})
 	}
 
-	users, err := h.userRepo.ListByOrganization(c.Context(), *orgID)
+	limit := c.QueryInt("limit", 100)
+	offset := c.QueryInt("offset", 0)
+	users, err := h.userRepo.ListByOrganization(c.Context(), *orgID, limit, offset)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to list users",

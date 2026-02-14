@@ -9,9 +9,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"runtime/debug"
 	"syscall"
 	"time"
+
+	"github.com/google/uuid"
 
 	"github.com/goplan/goplan/internal/api"
 	"github.com/goplan/goplan/internal/api/handlers"
@@ -83,13 +86,17 @@ func main() {
 	})
 	logging.SetDefault(logger)
 
-	// Always validate JWT_SECRET regardless of environment
+	// Always validate critical configs (DATABASE_URL, JWT_SECRET) regardless of environment
+	if cfg.Database.URL == "" {
+		logger.Error("Configuration validation failed", "error", "DATABASE_URL is required")
+		os.Exit(1)
+	}
 	if cfg.Auth.JWTSecret == "" || len(cfg.Auth.JWTSecret) < 32 {
 		logger.Error("Configuration validation failed", "error", "JWT_SECRET is required and must be at least 32 characters")
 		os.Exit(1)
 	}
 
-	// Skip remaining validation in development mode for easier local setup
+	// Skip optional validation (Redis, AI, Email) in development mode for easier local setup
 	if !cfg.IsDevelopment() {
 		if err := cfg.Validate(); err != nil {
 			logger.Error("Configuration validation failed", "error", err)
@@ -336,14 +343,19 @@ func buildMiddlewareChain(
 	return handler
 }
 
+// validRequestID matches alphanumeric characters and hyphens only, up to 128 chars.
+var validRequestID = regexp.MustCompile(`^[a-zA-Z0-9\-]{1,128}$`)
+
 // requestIDMiddleware adds a request ID to the context.
 func requestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Check if request ID is provided in header
 		requestID := r.Header.Get("X-Request-ID")
-		if requestID == "" {
-			// Generate a simple request ID based on timestamp
-			requestID = time.Now().Format("20060102150405.000000")
+
+		// Validate client-provided request ID: must be <= 128 chars and alphanumeric/hyphens only
+		if requestID == "" || !validRequestID.MatchString(requestID) {
+			// Generate a UUID-based request ID
+			requestID = uuid.New().String()
 		}
 
 		// Add request ID to response header
@@ -450,7 +462,11 @@ func corsMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 			}
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-User-ID, X-Workspace-ID, X-User-Role, X-Request-ID")
+			allowedHeaders := "Accept, Authorization, Content-Type, X-Request-ID"
+			if cfg.IsDevelopment() {
+				allowedHeaders += ", X-User-ID, X-Workspace-ID, X-User-Role"
+			}
+			w.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Max-Age", "3600")
 			w.Header().Set("Access-Control-Expose-Headers", "X-Request-ID")

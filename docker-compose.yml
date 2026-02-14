@@ -3,32 +3,47 @@ services:
     image: pgvector/pgvector:pg16
     container_name: goplan-postgres
     environment:
-      POSTGRES_USER: goplan
-      POSTGRES_PASSWORD: goplan
+      POSTGRES_USER: ${POSTGRES_USER:-goplan}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: goplan
+    # Use 127.0.0.1 binding for development safety.
+    # In production, remove `ports` and use `expose` instead to keep the
+    # database accessible only from the internal Docker network.
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U goplan"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-goplan}"]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
   redis:
     image: redis:7-alpine
     container_name: goplan-redis
+    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
+    # Use 127.0.0.1 binding for development safety.
+    # In production, remove `ports` and use `expose` instead to keep
+    # Redis accessible only from the internal Docker network.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   embedding-service:
     build:
@@ -44,6 +59,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 2G
 
   api:
     build:
@@ -57,14 +76,16 @@ services:
       - ENVIRONMENT=development
       - DB_HOST=postgres
       - DB_PORT=5432
-      - DB_USER=goplan
-      - DB_PASSWORD=goplan
+      - DB_USER=${POSTGRES_USER:-goplan}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
       - DB_NAME=goplan
-      - DB_SSLMODE=disable
+      - DB_SSLMODE=${DB_SSLMODE:-disable}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-changeme}
+      - JWT_SECRET=${JWT_SECRET}
       - EMBEDDING_SERVICE_URL=http://embedding-service:8000
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,6 +96,10 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   frontend:
     build:
@@ -87,6 +112,10 @@ services:
       - "3000:3000"
     depends_on:
       - api
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
 volumes:
   postgres_data:

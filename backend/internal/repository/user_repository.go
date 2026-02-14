@@ -113,14 +113,26 @@ func (r *UserRepository) UpdatePassword(ctx context.Context, userID uuid.UUID, p
 	return nil
 }
 
-// ListByOrganization lists all users in an organization
-func (r *UserRepository) ListByOrganization(ctx context.Context, orgID uuid.UUID) ([]models.User, error) {
+// ListByOrganization lists users in an organization with pagination.
+// limit defaults to 100, max 200. offset defaults to 0.
+func (r *UserRepository) ListByOrganization(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]models.User, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT id, email, name, role, organization_id, created_at, updated_at
 		FROM users WHERE organization_id = $1
-		ORDER BY name ASC`
+		ORDER BY name ASC
+		LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(ctx, query, orgID)
+	rows, err := r.db.Query(ctx, query, orgID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list users: %w", err)
 	}

@@ -1,12 +1,12 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 	"os/signal"
 	"strings"
 	"syscall"
-
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -59,7 +59,7 @@ func main() {
 		log.Println("[WARNING] ALLOW_ORIGINS contains 'localhost' in production environment. This is likely a misconfiguration.")
 	}
 	if cfg.Server.Environment == "production" && cfg.Database.SSLMode == "disable" {
-		log.Println("[WARNING] DB_SSLMODE is 'disable' in production environment. Enable SSL for secure database connections.")
+		log.Fatalf("DB_SSLMODE must not be 'disable' in production")
 	}
 
 	// Connect to database
@@ -67,7 +67,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
-	defer db.Close()
 
 	// Initialize repositories
 	taskRepo := repository.NewTaskRepository(db.Pool)
@@ -88,7 +87,7 @@ func main() {
 
 	// Initialize services
 	taskService := services.NewTaskService(
-		taskRepo, linkRepo, justificationRepo, blockerRepo, reviewRepo, ackRepo, embeddingClient,
+		taskRepo, linkRepo, justificationRepo, blockerRepo, reviewRepo, ackRepo, embeddingClient, db.Pool,
 	)
 
 	// Start embedding worker for background processing
@@ -122,10 +121,23 @@ func main() {
 		EnableTrustedProxyCheck: true,
 		TrustedProxies:          cfg.Server.TrustedProxies,
 		ProxyHeader:             cfg.Server.ProxyHeader,
+		ReadTimeout:             15 * time.Second,
+		WriteTimeout:            30 * time.Second,
+		IdleTimeout:             120 * time.Second,
 	})
 
 	// Global middleware
 	app.Use(recover.New())
+
+	// Security headers middleware
+	app.Use(func(c *fiber.Ctx) error {
+		c.Set("X-Content-Type-Options", "nosniff")
+		c.Set("X-Frame-Options", "DENY")
+		c.Set("X-XSS-Protection", "1; mode=block")
+		c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Set("Cache-Control", "no-store")
+		return c.Next()
+	})
 
 	// Request ID middleware for request tracing (before logger so IDs appear in logs)
 	app.Use(requestid.New(requestid.Config{
@@ -281,9 +293,16 @@ func main() {
 		embeddingWorker.Stop()
 	}
 
-	if err := app.Shutdown(); err != nil {
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	if err := app.ShutdownWithContext(shutdownCtx); err != nil {
 		log.Fatalf("Server forced to shutdown: %v", err)
 	}
+
+	// Explicitly close database connection pool
+	db.Close()
+
 	log.Println("Server exited properly")
 }
 

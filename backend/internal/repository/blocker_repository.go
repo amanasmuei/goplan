@@ -92,6 +92,39 @@ func (r *BlockerRepository) Resolve(ctx context.Context, id uuid.UUID, daysBlock
 	return nil
 }
 
+// ListByTaskIDs retrieves all blockers for multiple tasks in a single query.
+// This avoids N+1 query patterns when fetching blockers for many tasks.
+func (r *BlockerRepository) ListByTaskIDs(ctx context.Context, taskIDs []uuid.UUID) (map[uuid.UUID][]models.TaskBlocker, error) {
+	if len(taskIDs) == 0 {
+		return nil, nil
+	}
+
+	query := `
+		SELECT id, task_id, blocker_type, description, resolved_at, days_blocked, created_by, created_at
+		FROM task_blockers WHERE task_id = ANY($1)
+		ORDER BY created_at DESC`
+
+	rows, err := r.db.Query(ctx, query, taskIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list blockers by task IDs: %w", err)
+	}
+	defer rows.Close()
+
+	result := make(map[uuid.UUID][]models.TaskBlocker)
+	for rows.Next() {
+		var b models.TaskBlocker
+		err := rows.Scan(
+			&b.ID, &b.TaskID, &b.BlockerType, &b.Description, &b.ResolvedAt,
+			&b.DaysBlocked, &b.CreatedBy, &b.CreatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan blocker: %w", err)
+		}
+		result[b.TaskID] = append(result[b.TaskID], b)
+	}
+	return result, nil
+}
+
 func (r *BlockerRepository) GetBlockerPatterns(ctx context.Context, orgID uuid.UUID, limit int) (map[models.BlockerType]int, error) {
 	query := `
 		SELECT blocker_type, COUNT(*) as count

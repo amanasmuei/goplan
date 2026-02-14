@@ -24,12 +24,15 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Host     string
-	Port     string
-	User     string
-	Password string
-	DBName   string
-	SSLMode  string
+	Host        string
+	Port        string
+	User        string
+	Password    string
+	DBName      string
+	SSLMode     string
+	MaxConns    int32
+	MinConns    int32
+	MaxIdleTime string
 }
 
 type RedisConfig struct {
@@ -58,12 +61,15 @@ func Load() *Config {
 			ProxyHeader:    getEnv("PROXY_HEADER", "X-Forwarded-For"),
 		},
 		Database: DatabaseConfig{
-			Host:     getEnv("DB_HOST", "localhost"),
-			Port:     getEnv("DB_PORT", "5432"),
-			User:     getEnv("DB_USER", "goplan"),
-			Password: getEnv("DB_PASSWORD", "goplan"),
-			DBName:   getEnv("DB_NAME", "goplan"),
-			SSLMode:  getEnv("DB_SSLMODE", "disable"),
+			Host:        getEnv("DB_HOST", "localhost"),
+			Port:        getEnv("DB_PORT", "5432"),
+			User:        getEnv("DB_USER", "goplan"),
+			Password:    getEnv("DB_PASSWORD", "goplan"),
+			DBName:      getEnv("DB_NAME", "goplan"),
+			SSLMode:     getEnv("DB_SSLMODE", "disable"),
+			MaxConns:    int32(getEnvInt("DB_MAX_CONNS", 20)),
+			MinConns:    int32(getEnvInt("DB_MIN_CONNS", 5)),
+			MaxIdleTime: getEnv("DB_MAX_IDLE_TIME", "30m"),
 		},
 		Redis: RedisConfig{
 			Host:     getEnv("REDIS_HOST", "localhost"),

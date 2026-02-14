@@ -5,7 +5,7 @@
 # ===========================================
 
 # ----- Build Stage -----
-FROM golang:1.22-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 # Build arguments
 ARG VERSION=dev
@@ -42,7 +42,7 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
     ./cmd/server
 
 # ----- Development Stage -----
-FROM golang:1.22-alpine AS development
+FROM golang:1.24-alpine AS development
 
 # Install development tools
 RUN apk add --no-cache git make curl

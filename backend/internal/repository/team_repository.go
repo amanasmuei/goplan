@@ -112,14 +112,26 @@ func (r *TeamRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-// ListByOrganization lists all teams for an organization
-func (r *TeamRepository) ListByOrganization(ctx context.Context, orgID uuid.UUID) ([]models.Team, error) {
+// ListByOrganization lists teams for an organization with pagination.
+// limit defaults to 100, max 200. offset defaults to 0.
+func (r *TeamRepository) ListByOrganization(ctx context.Context, orgID uuid.UUID, limit, offset int) ([]models.Team, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT id, name, description, organization_id, created_by, created_at, updated_at
 		FROM teams WHERE organization_id = $1
-		ORDER BY name ASC`
+		ORDER BY name ASC
+		LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(ctx, query, orgID)
+	rows, err := r.db.Query(ctx, query, orgID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list teams: %w", err)
 	}
@@ -249,16 +261,28 @@ func (r *TeamRepository) CountMembers(ctx context.Context, teamID uuid.UUID) (in
 	return count, nil
 }
 
-// GetUserTeams gets all teams a user belongs to
-func (r *TeamRepository) GetUserTeams(ctx context.Context, userID uuid.UUID) ([]models.Team, error) {
+// GetUserTeams gets teams a user belongs to with pagination.
+// limit defaults to 100, max 200. offset defaults to 0.
+func (r *TeamRepository) GetUserTeams(ctx context.Context, userID uuid.UUID, limit, offset int) ([]models.Team, error) {
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
 	query := `
 		SELECT t.id, t.name, t.description, t.organization_id, t.created_by, t.created_at, t.updated_at
 		FROM teams t
 		JOIN team_members tm ON t.id = tm.team_id
 		WHERE tm.user_id = $1
-		ORDER BY t.name ASC`
+		ORDER BY t.name ASC
+		LIMIT $2 OFFSET $3`
 
-	rows, err := r.db.Query(ctx, query, userID)
+	rows, err := r.db.Query(ctx, query, userID, limit, offset)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get user teams: %w", err)
 	}

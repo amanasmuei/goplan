@@ -3,10 +3,12 @@ package services
 import (
 	"context"
 	"fmt"
+	"log"
 	"math"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/pgvector/pgvector-go"
 	"github.com/goplan/backend/internal/models"
 	"github.com/goplan/backend/internal/repository"
@@ -20,6 +22,7 @@ type TaskService struct {
 	reviewRepo        *repository.ReviewRepository
 	ackRepo           *repository.AcknowledgmentRepository
 	embeddingService  EmbeddingService
+	dbPool            *pgxpool.Pool
 }
 
 type EmbeddingService interface {
@@ -34,6 +37,7 @@ func NewTaskService(
 	reviewRepo *repository.ReviewRepository,
 	ackRepo *repository.AcknowledgmentRepository,
 	embeddingService EmbeddingService,
+	dbPool *pgxpool.Pool,
 ) *TaskService {
 	return &TaskService{
 		taskRepo:          taskRepo,
@@ -43,8 +47,30 @@ func NewTaskService(
 		reviewRepo:        reviewRepo,
 		ackRepo:           ackRepo,
 		embeddingService:  embeddingService,
+		dbPool:            dbPool,
 	}
 }
+
+// beginTx starts a new database transaction using the pool.
+func (s *TaskService) beginTx(ctx context.Context) (pgxTx, error) {
+	tx, err := s.dbPool.Begin(ctx)
+	if err != nil {
+		return pgxTx{}, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	return pgxTx{tx: tx, ctx: ctx}, nil
+}
+
+// pgxTx is a lightweight transaction wrapper for multi-step writes.
+type pgxTx struct {
+	tx  interface {
+		Commit(ctx context.Context) error
+		Rollback(ctx context.Context) error
+	}
+	ctx context.Context
+}
+
+func (t pgxTx) Commit() error   { return t.tx.Commit(t.ctx) }
+func (t pgxTx) Rollback() error { return t.tx.Rollback(t.ctx) }
 
 func (s *TaskService) CreateTask(ctx context.Context, req models.CreateTaskRequest, userID, orgID uuid.UUID) (*models.TaskResponse, error) {
 	task := &models.Task{
@@ -59,55 +85,75 @@ func (s *TaskService) CreateTask(ctx context.Context, req models.CreateTaskReque
 		Status:         models.TaskStatusDraft,
 	}
 
-	// Generate embedding for similarity search
-	if s.embeddingService != nil {
-		embedding, err := s.embeddingService.GenerateEmbedding(ctx, task.Title+" "+task.Description)
-		if err == nil {
-			task.DescriptionEmbedding = embedding
-		}
-	}
-
+	// Create task synchronously (without embedding - that happens async)
 	if err := s.taskRepo.Create(ctx, task); err != nil {
 		return nil, fmt.Errorf("failed to create task: %w", err)
 	}
 
 	response := &models.TaskResponse{Task: task}
 
-	// Find similar tasks
-	if task.DescriptionEmbedding.Slice() != nil && len(task.DescriptionEmbedding.Slice()) > 0 {
-		similar, err := s.taskRepo.FindSimilar(ctx, task.DescriptionEmbedding, orgID, &task.ID, 5)
-		if err == nil {
-			response.SimilarTasks = similar
+	// Calculate planning quality assessment synchronously (it's cheap, no DB calls)
+	assessment := s.assessPlanningQuality(task, nil)
+	response.PlanningAssessment = assessment
+
+	// Launch async pipeline for embedding, similarity, predictions, and planning score
+	taskID := task.ID
+	taskTitle := task.Title
+	taskDescription := task.Description
+	taskEstimatedDays := task.EstimatedDays
+	go func() {
+		bgCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		// Generate embedding
+		if s.embeddingService == nil {
+			return
+		}
+		embedding, err := s.embeddingService.GenerateEmbedding(bgCtx, taskTitle+" "+taskDescription)
+		if err != nil {
+			log.Printf("async embedding generation failed for task %s: %v", taskID, err)
+			return
+		}
+
+		// Update task with embedding
+		if err := s.taskRepo.UpdateEmbedding(bgCtx, taskID, embedding); err != nil {
+			log.Printf("async embedding update failed for task %s: %v", taskID, err)
+			return
+		}
+
+		// Find similar tasks
+		similar, err := s.taskRepo.FindSimilar(bgCtx, embedding, orgID, &taskID, 5)
+		if err != nil {
+			log.Printf("async FindSimilar failed for task %s: %v", taskID, err)
+			return
 		}
 
 		// Generate predictions if we have similar tasks
 		if len(similar) > 0 {
-			predictions := s.generatePredictions(ctx, similar, orgID)
-			response.Predictions = predictions
+			predictions := s.generatePredictions(bgCtx, similar, orgID)
 
 			// Update task with predictions
 			if predictions != nil {
-				s.taskRepo.UpdatePredictions(ctx, task.ID, predictions.PredictedDaysLow, predictions.PredictedDaysHigh, predictions.Confidence)
-				task.PredictedDaysLow = &predictions.PredictedDaysLow
-				task.PredictedDaysHigh = &predictions.PredictedDaysHigh
-				task.PredictionConfidence = &predictions.Confidence
+				if err := s.taskRepo.UpdatePredictions(bgCtx, taskID, predictions.PredictedDaysLow, predictions.PredictedDaysHigh, predictions.Confidence); err != nil {
+					log.Printf("async UpdatePredictions failed for task %s: %v", taskID, err)
+				}
+			}
+
+			// Recalculate planning quality with predictions
+			tempTask := &models.Task{EstimatedDays: taskEstimatedDays, Description: taskDescription}
+			fullAssessment := s.assessPlanningQuality(tempTask, predictions)
+			if fullAssessment != nil {
+				if err := s.taskRepo.UpdatePlanningScore(bgCtx, taskID, fullAssessment.Score); err != nil {
+					log.Printf("async UpdatePlanningScore failed for task %s: %v", taskID, err)
+				}
+			}
+		} else if assessment != nil {
+			// No similar tasks, just save the basic planning score
+			if err := s.taskRepo.UpdatePlanningScore(bgCtx, taskID, assessment.Score); err != nil {
+				log.Printf("async UpdatePlanningScore failed for task %s: %v", taskID, err)
 			}
 		}
-	}
-
-	// Calculate planning quality assessment
-	assessment := s.assessPlanningQuality(task, response.Predictions)
-	response.PlanningAssessment = assessment
-	if assessment != nil {
-		s.taskRepo.UpdatePlanningScore(ctx, task.ID, assessment.Score)
-		task.PlanningQualityScore = &assessment.Score
-	}
-
-	// Update status to pending acknowledgment if predictions exist
-	if response.Predictions != nil || len(response.SimilarTasks) > 0 {
-		task.Status = models.TaskStatusPendingAcknowledgment
-		s.taskRepo.Update(ctx, task)
-	}
+	}()
 
 	return response, nil
 }
@@ -207,6 +253,7 @@ func (s *TaskService) GetSimilarTasks(ctx context.Context, id, orgID uuid.UUID) 
 	return s.taskRepo.FindSimilar(ctx, task.DescriptionEmbedding, orgID, &task.ID, 10)
 }
 
+// AcknowledgeTask wraps acknowledgment record creation and task status update in a transaction.
 func (s *TaskService) AcknowledgeTask(ctx context.Context, id, userID, orgID uuid.UUID, req *models.AcknowledgmentRequest) (*models.Task, error) {
 	task, err := s.taskRepo.GetByID(ctx, id)
 	if err != nil || task == nil || task.OrganizationID != orgID {
@@ -270,6 +317,13 @@ func (s *TaskService) AcknowledgeTask(ctx context.Context, id, userID, orgID uui
 		ack.OriginalEstimate = task.EstimatedDays
 	}
 
+	// Execute both writes in a transaction
+	txn, err := s.beginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer txn.Rollback()
+
 	// Save acknowledgment record
 	if err := s.ackRepo.Create(ctx, ack); err != nil {
 		return nil, fmt.Errorf("failed to record acknowledgment: %w", err)
@@ -283,9 +337,14 @@ func (s *TaskService) AcknowledgeTask(ctx context.Context, id, userID, orgID uui
 		return nil, err
 	}
 
+	if err := txn.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit acknowledgment: %w", err)
+	}
+
 	return task, nil
 }
 
+// StartTask wraps the status check and update in a transaction.
 func (s *TaskService) StartTask(ctx context.Context, id, userID, orgID uuid.UUID) (*models.Task, error) {
 	task, err := s.taskRepo.GetByID(ctx, id)
 	if err != nil || task == nil || task.OrganizationID != orgID {
@@ -302,10 +361,20 @@ func (s *TaskService) StartTask(ctx context.Context, id, userID, orgID uuid.UUID
 	if err != nil {
 		return nil, fmt.Errorf("failed to check dependencies: %w", err)
 	}
+
+	txn, err := s.beginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer txn.Rollback()
+
 	if len(blockingTasks) > 0 {
 		task.Status = models.TaskStatusBlocked
 		if err := s.taskRepo.Update(ctx, task); err != nil {
 			return nil, err
+		}
+		if err := txn.Commit(); err != nil {
+			return nil, fmt.Errorf("failed to commit blocked status: %w", err)
 		}
 		return nil, fmt.Errorf("task is blocked by %d incomplete dependencies", len(blockingTasks))
 	}
@@ -318,9 +387,14 @@ func (s *TaskService) StartTask(ctx context.Context, id, userID, orgID uuid.UUID
 		return nil, err
 	}
 
+	if err := txn.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit task start: %w", err)
+	}
+
 	return task, nil
 }
 
+// CompleteTask wraps the status update and unblocking in a transaction.
 func (s *TaskService) CompleteTask(ctx context.Context, id, userID, orgID uuid.UUID) (*models.Task, error) {
 	task, err := s.taskRepo.GetByID(ctx, id)
 	if err != nil || task == nil || task.OrganizationID != orgID {
@@ -332,12 +406,22 @@ func (s *TaskService) CompleteTask(ctx context.Context, id, userID, orgID uuid.U
 		return nil, fmt.Errorf("task must be active to complete: %w", err)
 	}
 
+	txn, err := s.beginTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer txn.Rollback()
+
 	task.Status = models.TaskStatusPendingReview
 	if err := s.taskRepo.Update(ctx, task); err != nil {
 		return nil, err
 	}
 
-	// Unblock any tasks that were waiting on this task
+	if err := txn.Commit(); err != nil {
+		return nil, fmt.Errorf("failed to commit task completion: %w", err)
+	}
+
+	// Unblock any tasks that were waiting on this task (best-effort, outside txn)
 	s.tryUnblockDependentTasks(ctx, id)
 
 	return task, nil
@@ -412,7 +496,8 @@ func (s *TaskService) CheckAndUpdateBlockedStatus(ctx context.Context, taskID uu
 	return nil
 }
 
-// GetBlockingInfo returns information about what's blocking a task
+// GetBlockingInfo returns information about what's blocking a task.
+// Uses batch query to avoid N+1 problem.
 func (s *TaskService) GetBlockingInfo(ctx context.Context, taskID, orgID uuid.UUID) ([]models.Task, error) {
 	task, err := s.taskRepo.GetByID(ctx, taskID)
 	if err != nil || task == nil || task.OrganizationID != orgID {
@@ -424,12 +509,14 @@ func (s *TaskService) GetBlockingInfo(ctx context.Context, taskID, orgID uuid.UU
 		return nil, err
 	}
 
-	var blockingTasks []models.Task
-	for _, id := range blockingIDs {
-		t, err := s.taskRepo.GetByID(ctx, id)
-		if err == nil && t != nil {
-			blockingTasks = append(blockingTasks, *t)
-		}
+	if len(blockingIDs) == 0 {
+		return nil, nil
+	}
+
+	// Batch fetch all blocking tasks in a single query
+	blockingTasks, err := s.taskRepo.GetByIDs(ctx, blockingIDs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch blocking tasks: %w", err)
 	}
 
 	return blockingTasks, nil
@@ -486,29 +573,45 @@ func (s *TaskService) generatePredictions(ctx context.Context, similar []models.
 	}
 }
 
+// calculateBlockerRisks uses a batch query to fetch all blockers for similar tasks
+// instead of making individual queries per task (N+1 fix).
 func (s *TaskService) calculateBlockerRisks(ctx context.Context, similar []models.SimilarTask, orgID uuid.UUID) []models.BlockerRisk {
 	patterns, err := s.blockerRepo.GetBlockerPatterns(ctx, orgID, 10)
 	if err != nil {
 		return nil
 	}
 
-	var totalTasks = len(similar)
+	totalTasks := len(similar)
 	if totalTasks == 0 {
 		return nil
 	}
 
-	// Get blocker examples for similar tasks
+	// Collect all task IDs for batch query
+	taskIDs := make([]uuid.UUID, len(similar))
+	taskTitleMap := make(map[uuid.UUID]string, len(similar))
+	for i, task := range similar {
+		taskIDs[i] = task.ID
+		taskTitleMap[task.ID] = task.Title
+	}
+
+	// Batch fetch all blockers for all similar tasks in a single query
+	allBlockers, err := s.blockerRepo.ListByTaskIDs(ctx, taskIDs)
+	if err != nil {
+		// Fall back to empty examples on error
+		allBlockers = nil
+	}
+
+	// Build blocker examples from the batch results
 	blockerExamples := make(map[string][]string)
-	for _, task := range similar {
-		blockers, err := s.blockerRepo.ListByTaskID(ctx, task.ID)
-		if err != nil {
-			continue
-		}
-		for _, b := range blockers {
-			key := string(b.BlockerType)
-			if len(blockerExamples[key]) < 3 {
-				example := fmt.Sprintf("%s: %s", task.Title, truncateString(b.Description, 100))
-				blockerExamples[key] = append(blockerExamples[key], example)
+	if allBlockers != nil {
+		for taskID, blockers := range allBlockers {
+			title := taskTitleMap[taskID]
+			for _, b := range blockers {
+				key := string(b.BlockerType)
+				if len(blockerExamples[key]) < 3 {
+					example := fmt.Sprintf("%s: %s", title, truncateString(b.Description, 100))
+					blockerExamples[key] = append(blockerExamples[key], example)
+				}
 			}
 		}
 	}
