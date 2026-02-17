@@ -1,0 +1,22 @@
+-- 000001_init.down.sql
+-- Reverse of initial schema
+
+DROP TABLE IF EXISTS task_acknowledgments CASCADE;
+DROP TABLE IF EXISTS task_reviews CASCADE;
+DROP TABLE IF EXISTS task_blockers CASCADE;
+DROP TABLE IF EXISTS task_justifications CASCADE;
+DROP TABLE IF EXISTS task_links CASCADE;
+DROP TABLE IF EXISTS tasks CASCADE;
+DROP TABLE IF EXISTS projects CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+DROP TABLE IF EXISTS organizations CASCADE;
+
+DROP TYPE IF EXISTS acknowledgment_action;
+DROP TYPE IF EXISTS project_status;
+DROP TYPE IF EXISTS blocker_type;
+DROP TYPE IF EXISTS link_type;
+DROP TYPE IF EXISTS user_role;
+DROP TYPE IF EXISTS task_status;
+
+DROP EXTENSION IF EXISTS vector;
+DROP EXTENSION IF EXISTS "uuid-ossp";

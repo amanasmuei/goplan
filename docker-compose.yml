@@ -13,7 +13,8 @@ services:
       - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./backend/migrations/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # Migrations are now handled by golang-migrate via the API entrypoint.
+      # To seed dev data: docker exec -i goplan-postgres psql -U goplan goplan < backend/migrations/seed.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-goplan}"]
       interval: 10s
