@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/goplan/backend/internal/middleware"
 	"github.com/goplan/backend/internal/models"
 	"github.com/goplan/backend/internal/services"
 )
@@ -29,6 +30,9 @@ func (h *TaskHandler) CreateTask(c *fiber.Ctx) error {
 	var req models.CreateTaskRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: "Invalid request body"})
+	}
+	if err := middleware.Validate(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: err.Error()})
 	}
 
 	userID, orgID, err := getUserContext(c)
@@ -94,6 +98,9 @@ func (h *TaskHandler) UpdateTask(c *fiber.Ctx) error {
 	var req models.UpdateTaskRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: "Invalid request body"})
+	}
+	if err := middleware.Validate(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: err.Error()})
 	}
 
 	_, orgID, err := getUserContext(c)

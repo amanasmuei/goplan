@@ -23,11 +23,12 @@ const (
 // ListTasksTool lists tasks with filtering.
 type ListTasksTool struct {
 	taskRepo repository.TaskRepository
+	planRepo repository.PlanRepository
 }
 
 // NewListTasksTool creates a new ListTasksTool.
-func NewListTasksTool(taskRepo repository.TaskRepository) *ListTasksTool {
-	return &ListTasksTool{taskRepo: taskRepo}
+func NewListTasksTool(taskRepo repository.TaskRepository, planRepo repository.PlanRepository) *ListTasksTool {
+	return &ListTasksTool{taskRepo: taskRepo, planRepo: planRepo}
 }
 
 // Name returns the tool name.
@@ -50,6 +51,15 @@ func (t *ListTasksTool) Execute(ctx context.Context, execCtx mcp.ExecutionContex
 		} else {
 			return nil, err
 		}
+	}
+
+	// Verify plan belongs to the user's workspace
+	p, err := t.planRepo.GetByID(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	if p.WorkspaceID != execCtx.WorkspaceID {
+		return nil, shared.NewForbiddenError("access", "plan")
 	}
 
 	// Parse pagination
@@ -129,13 +139,15 @@ func (t *ListTasksTool) Execute(ctx context.Context, execCtx mcp.ExecutionContex
 // GetTaskTool retrieves task details with comments.
 type GetTaskTool struct {
 	taskRepo    repository.TaskRepository
+	planRepo    repository.PlanRepository
 	commentRepo repository.CommentRepository
 }
 
 // NewGetTaskTool creates a new GetTaskTool.
-func NewGetTaskTool(taskRepo repository.TaskRepository, commentRepo repository.CommentRepository) *GetTaskTool {
+func NewGetTaskTool(taskRepo repository.TaskRepository, planRepo repository.PlanRepository, commentRepo repository.CommentRepository) *GetTaskTool {
 	return &GetTaskTool{
 		taskRepo:    taskRepo,
+		planRepo:    planRepo,
 		commentRepo: commentRepo,
 	}
 }
@@ -161,6 +173,15 @@ func (t *GetTaskTool) Execute(ctx context.Context, execCtx mcp.ExecutionContext,
 	tk, err := t.taskRepo.GetByIDWithDetails(ctx, taskID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Verify workspace ownership via plan
+	p, err := t.planRepo.GetByID(ctx, tk.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	if p.WorkspaceID != execCtx.WorkspaceID {
+		return nil, shared.NewForbiddenError("access", "task")
 	}
 
 	// Get comments
@@ -225,6 +246,11 @@ func (t *CreateTaskTool) Execute(ctx context.Context, execCtx mcp.ExecutionConte
 	p, err := t.planRepo.GetByID(ctx, planID)
 	if err != nil {
 		return nil, err
+	}
+
+	// Verify workspace ownership
+	if p.WorkspaceID != execCtx.WorkspaceID {
+		return nil, shared.NewForbiddenError("access", "plan")
 	}
 
 	// Determine status
@@ -324,6 +350,17 @@ func (t *UpdateTaskTool) Execute(ctx context.Context, execCtx mcp.ExecutionConte
 		return nil, err
 	}
 
+	// Verify workspace ownership via plan
+	{
+		p, err := t.planRepo.GetByID(ctx, existingTask.PlanID)
+		if err != nil {
+			return nil, err
+		}
+		if p.WorkspaceID != execCtx.WorkspaceID {
+			return nil, shared.NewForbiddenError("access", "task")
+		}
+	}
+
 	// Build update input
 	input := &task.UpdateTaskInput{}
 	hasUpdates := false
@@ -403,11 +440,12 @@ func (t *UpdateTaskTool) Execute(ctx context.Context, execCtx mcp.ExecutionConte
 // SearchTasksTool performs full-text search on tasks.
 type SearchTasksTool struct {
 	taskRepo repository.TaskRepository
+	planRepo repository.PlanRepository
 }
 
 // NewSearchTasksTool creates a new SearchTasksTool.
-func NewSearchTasksTool(taskRepo repository.TaskRepository) *SearchTasksTool {
-	return &SearchTasksTool{taskRepo: taskRepo}
+func NewSearchTasksTool(taskRepo repository.TaskRepository, planRepo repository.PlanRepository) *SearchTasksTool {
+	return &SearchTasksTool{taskRepo: taskRepo, planRepo: planRepo}
 }
 
 // Name returns the tool name.
@@ -430,6 +468,15 @@ func (t *SearchTasksTool) Execute(ctx context.Context, execCtx mcp.ExecutionCont
 		} else {
 			return nil, err
 		}
+	}
+
+	// Verify plan belongs to the user's workspace
+	planCheck, err := t.planRepo.GetByID(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	if planCheck.WorkspaceID != execCtx.WorkspaceID {
+		return nil, shared.NewForbiddenError("access", "plan")
 	}
 
 	query, err := getRequiredString(args, "query")
@@ -513,6 +560,12 @@ func (t *MoveTaskTool) Execute(ctx context.Context, execCtx mcp.ExecutionContext
 	if err != nil {
 		return nil, err
 	}
+
+	// Verify workspace ownership
+	if p.WorkspaceID != execCtx.WorkspaceID {
+		return nil, shared.NewForbiddenError("access", "task")
+	}
+
 	if !p.HasStatus(status) {
 		return nil, shared.NewValidationError("status", "invalid status for this plan")
 	}
@@ -537,11 +590,11 @@ func (t *MoveTaskTool) Execute(ctx context.Context, execCtx mcp.ExecutionContext
 // RegisterTaskTools registers all task tools with the registry.
 func RegisterTaskTools(registry *mcp.ToolRegistry, taskRepo repository.TaskRepository, planRepo repository.PlanRepository, commentRepo repository.CommentRepository) error {
 	tools := []mcp.Tool{
-		NewListTasksTool(taskRepo),
-		NewGetTaskTool(taskRepo, commentRepo),
+		NewListTasksTool(taskRepo, planRepo),
+		NewGetTaskTool(taskRepo, planRepo, commentRepo),
 		NewCreateTaskTool(taskRepo, planRepo),
 		NewUpdateTaskTool(taskRepo, planRepo),
-		NewSearchTasksTool(taskRepo),
+		NewSearchTasksTool(taskRepo, planRepo),
 		NewMoveTaskTool(taskRepo, planRepo),
 	}
 

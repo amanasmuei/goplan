@@ -47,6 +47,14 @@ data:
   OTEL_SERVICE_NAME: "goplan-api"
 
 ---
+# IMPORTANT: Do NOT store real secrets in version control.
+# Use one of the following approaches:
+#   - kubectl create secret generic goplan-backend-secrets --from-env-file=.env.production
+#   - Sealed Secrets: kubeseal < secret.yaml > sealed-secret.yaml
+#   - External Secrets Operator with AWS Secrets Manager / HashiCorp Vault
+#
+# Required secret keys:
+#   DATABASE_URL, REDIS_URL, JWT_SECRET, CLAUDE_API_KEY
 apiVersion: v1
 kind: Secret
 metadata:
@@ -57,11 +65,11 @@ metadata:
     component: backend
 type: Opaque
 stringData:
-  # These values should be populated via sealed-secrets, external-secrets, or manually
-  DATABASE_URL: "postgres://goplan:CHANGE_ME@goplan-postgres:5432/goplan?sslmode=require"
-  REDIS_URL: "redis://:CHANGE_ME@goplan-redis:6379"
-  JWT_SECRET: "CHANGE_ME_TO_A_SECURE_SECRET_MIN_32_CHARACTERS"
-  CLAUDE_API_KEY: "sk-ant-CHANGE_ME"
+  # WARNING: Populate these via external secret management, NOT in this file.
+  DATABASE_URL: ""
+  REDIS_URL: ""
+  JWT_SECRET: ""
+  CLAUDE_API_KEY: ""
   SENDGRID_API_KEY: ""
 
 ---

@@ -413,7 +413,14 @@ func TestCreateTaskTool(t *testing.T) {
 
 func TestListTasksTool(t *testing.T) {
 	taskRepo := NewMockTaskRepository()
-	tool := NewListTasksTool(taskRepo)
+	planRepo := NewMockPlanRepository()
+	tool := NewListTasksTool(taskRepo, planRepo)
+
+	// Create test plans
+	p1 := plan.NewPlan("plan-1", "ws-1", "Plan 1", "user-1", shared.PlanDomainSoftware, nil)
+	p2 := plan.NewPlan("plan-2", "ws-1", "Plan 2", "user-1", shared.PlanDomainSoftware, nil)
+	_ = planRepo.Create(context.Background(), p1)
+	_ = planRepo.Create(context.Background(), p2)
 
 	// Create test tasks
 	t1 := task.NewTask("task-1", "plan-1", "Task 1", "todo", shared.TaskPriorityMedium)
@@ -424,7 +431,7 @@ func TestListTasksTool(t *testing.T) {
 	_ = taskRepo.Create(context.Background(), t3)
 
 	t.Run("lists tasks for plan", func(t *testing.T) {
-		execCtx := mcp.ExecutionContext{UserID: "user-1"}
+		execCtx := mcp.ExecutionContext{UserID: "user-1", WorkspaceID: "ws-1"}
 		args := map[string]interface{}{
 			"planId": "plan-1",
 		}
@@ -442,7 +449,7 @@ func TestListTasksTool(t *testing.T) {
 	})
 
 	t.Run("filters by status", func(t *testing.T) {
-		execCtx := mcp.ExecutionContext{UserID: "user-1"}
+		execCtx := mcp.ExecutionContext{UserID: "user-1", WorkspaceID: "ws-1"}
 		args := map[string]interface{}{
 			"planId": "plan-1",
 			"status": "todo",
@@ -474,7 +481,7 @@ func TestUpdateTaskTool(t *testing.T) {
 	_ = taskRepo.Create(context.Background(), tk)
 
 	t.Run("updates task title", func(t *testing.T) {
-		execCtx := mcp.ExecutionContext{UserID: "user-1"}
+		execCtx := mcp.ExecutionContext{UserID: "user-1", WorkspaceID: "ws-1"}
 		args := map[string]interface{}{
 			"taskId": "task-1",
 			"title":  "Updated Title",
@@ -493,7 +500,7 @@ func TestUpdateTaskTool(t *testing.T) {
 	})
 
 	t.Run("validates status against plan", func(t *testing.T) {
-		execCtx := mcp.ExecutionContext{UserID: "user-1"}
+		execCtx := mcp.ExecutionContext{UserID: "user-1", WorkspaceID: "ws-1"}
 		args := map[string]interface{}{
 			"taskId": "task-1",
 			"status": "invalid_status",
@@ -506,7 +513,7 @@ func TestUpdateTaskTool(t *testing.T) {
 	})
 
 	t.Run("requires at least one field", func(t *testing.T) {
-		execCtx := mcp.ExecutionContext{UserID: "user-1"}
+		execCtx := mcp.ExecutionContext{UserID: "user-1", WorkspaceID: "ws-1"}
 		args := map[string]interface{}{
 			"taskId": "task-1",
 		}
@@ -531,7 +538,7 @@ func TestMoveTaskTool(t *testing.T) {
 	_ = taskRepo.Create(context.Background(), tk)
 
 	t.Run("moves task to new status", func(t *testing.T) {
-		execCtx := mcp.ExecutionContext{UserID: "user-1"}
+		execCtx := mcp.ExecutionContext{UserID: "user-1", WorkspaceID: "ws-1"}
 		args := map[string]interface{}{
 			"taskId":   "task-1",
 			"status":   "in_progress",
@@ -551,7 +558,7 @@ func TestMoveTaskTool(t *testing.T) {
 	})
 
 	t.Run("validates status against plan", func(t *testing.T) {
-		execCtx := mcp.ExecutionContext{UserID: "user-1"}
+		execCtx := mcp.ExecutionContext{UserID: "user-1", WorkspaceID: "ws-1"}
 		args := map[string]interface{}{
 			"taskId": "task-1",
 			"status": "invalid_status",
@@ -566,7 +573,12 @@ func TestMoveTaskTool(t *testing.T) {
 
 func TestSearchTasksTool(t *testing.T) {
 	taskRepo := NewMockTaskRepository()
-	tool := NewSearchTasksTool(taskRepo)
+	planRepo := NewMockPlanRepository()
+	tool := NewSearchTasksTool(taskRepo, planRepo)
+
+	// Create test plan
+	p := plan.NewPlan("plan-1", "ws-1", "Test Plan", "user-1", shared.PlanDomainSoftware, nil)
+	_ = planRepo.Create(context.Background(), p)
 
 	// Create test tasks
 	t1 := task.NewTask("task-1", "plan-1", "Backend API task", "todo", shared.TaskPriorityMedium)
@@ -575,7 +587,7 @@ func TestSearchTasksTool(t *testing.T) {
 	_ = taskRepo.Create(context.Background(), t2)
 
 	t.Run("searches tasks", func(t *testing.T) {
-		execCtx := mcp.ExecutionContext{UserID: "user-1"}
+		execCtx := mcp.ExecutionContext{UserID: "user-1", WorkspaceID: "ws-1"}
 		args := map[string]interface{}{
 			"planId": "plan-1",
 			"query":  "backend",
@@ -593,7 +605,7 @@ func TestSearchTasksTool(t *testing.T) {
 	})
 
 	t.Run("requires query", func(t *testing.T) {
-		execCtx := mcp.ExecutionContext{UserID: "user-1"}
+		execCtx := mcp.ExecutionContext{UserID: "user-1", WorkspaceID: "ws-1"}
 		args := map[string]interface{}{
 			"planId": "plan-1",
 		}

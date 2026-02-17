@@ -30,14 +30,18 @@ type User struct {
 	Role        string
 }
 
+// TokenBlacklist defines the interface for checking blacklisted tokens.
+type TokenBlacklist interface {
+	IsBlacklisted(ctx context.Context, tokenID string) bool
+}
+
 // Middleware provides JWT authentication middleware.
 type Middleware struct {
-	jwt          *JWT
-	logger       *logging.Logger
-	metrics      *metrics.Metrics
-	skipPaths    []string
-	devMode      bool
-	devUserID    string
+	jwt       *JWT
+	logger    *logging.Logger
+	metrics   *metrics.Metrics
+	skipPaths []string
+	blacklist TokenBlacklist
 }
 
 // MiddlewareConfig holds middleware configuration.
@@ -46,8 +50,7 @@ type MiddlewareConfig struct {
 	Logger    *logging.Logger
 	Metrics   *metrics.Metrics
 	SkipPaths []string
-	DevMode   bool
-	DevUserID string
+	Blacklist TokenBlacklist
 }
 
 // NewMiddleware creates a new auth middleware.
@@ -57,8 +60,7 @@ func NewMiddleware(config MiddlewareConfig) *Middleware {
 		logger:    config.Logger,
 		metrics:   config.Metrics,
 		skipPaths: config.SkipPaths,
-		devMode:   config.DevMode,
-		devUserID: config.DevUserID,
+		blacklist: config.Blacklist,
 	}
 }
 
@@ -69,19 +71,6 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 		if m.shouldSkip(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
-		}
-
-		// In dev mode, check for dev headers first
-		if m.devMode {
-			if user := m.extractDevUser(r); user != nil {
-				ctx := context.WithValue(r.Context(), ContextKeyUser, user)
-				ctx = logging.ContextWithUserID(ctx, user.ID)
-				if user.WorkspaceID != "" {
-					ctx = logging.ContextWithWorkspaceID(ctx, user.WorkspaceID)
-				}
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
 		}
 
 		// Extract JWT token
@@ -112,6 +101,15 @@ func (m *Middleware) Authenticate(next http.Handler) http.Handler {
 
 			m.writeAuthError(w, message, status)
 			return
+		}
+
+		// Check if token has been blacklisted (e.g. after logout)
+		if m.blacklist != nil && claims.TokenID != "" {
+			if m.blacklist.IsBlacklisted(r.Context(), claims.TokenID) {
+				m.recordAuthFailure()
+				m.writeAuthError(w, "token has been revoked", http.StatusUnauthorized)
+				return
+			}
 		}
 
 		// Create user from claims
@@ -188,20 +186,16 @@ func (m *Middleware) RequireMember(next http.Handler) http.Handler {
 // Optional allows unauthenticated requests but extracts user if token is present.
 func (m *Middleware) Optional(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// In dev mode, check for dev headers
-		if m.devMode {
-			if user := m.extractDevUser(r); user != nil {
-				ctx := context.WithValue(r.Context(), ContextKeyUser, user)
-				ctx = logging.ContextWithUserID(ctx, user.ID)
-				next.ServeHTTP(w, r.WithContext(ctx))
-				return
-			}
-		}
-
 		// Try to extract and validate token
 		authHeader := r.Header.Get("Authorization")
 		if token, err := ExtractBearerToken(authHeader); err == nil {
 			if claims, err := m.jwt.ValidateAccessToken(token); err == nil {
+				// Check blacklist
+				if m.blacklist != nil && claims.TokenID != "" && m.blacklist.IsBlacklisted(r.Context(), claims.TokenID) {
+					// Token is revoked; treat as unauthenticated
+					next.ServeHTTP(w, r)
+					return
+				}
 				user := &User{
 					ID:          claims.UserID,
 					Email:       claims.Email,
@@ -228,26 +222,6 @@ func (m *Middleware) shouldSkip(path string) bool {
 		}
 	}
 	return false
-}
-
-// extractDevUser extracts user from development headers.
-func (m *Middleware) extractDevUser(r *http.Request) *User {
-	userID := r.Header.Get("X-User-ID")
-	if userID == "" {
-		if m.devUserID != "" {
-			userID = m.devUserID
-		} else {
-			return nil
-		}
-	}
-
-	return &User{
-		ID:          userID,
-		Email:       r.Header.Get("X-User-Email"),
-		Name:        r.Header.Get("X-User-Name"),
-		WorkspaceID: r.Header.Get("X-Workspace-ID"),
-		Role:        r.Header.Get("X-User-Role"),
-	}
 }
 
 // writeAuthError writes an authentication error response.

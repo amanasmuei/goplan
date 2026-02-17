@@ -44,10 +44,8 @@ func (t *ListPlansTool) Description() string {
 
 // Execute executes the tool.
 func (t *ListPlansTool) Execute(ctx context.Context, execCtx mcp.ExecutionContext, args map[string]interface{}) (interface{}, error) {
+	// Always use the authenticated user's workspace; ignore client-supplied workspaceId
 	workspaceID := execCtx.WorkspaceID
-	if ws := getOptionalString(args, "workspaceId"); ws != nil {
-		workspaceID = *ws
-	}
 
 	if workspaceID == "" {
 		return nil, shared.NewValidationError("workspaceId", "workspace ID is required")
@@ -137,6 +135,11 @@ func (t *GetPlanTool) Execute(ctx context.Context, execCtx mcp.ExecutionContext,
 		return nil, err
 	}
 
+	// Verify workspace ownership
+	if p.WorkspaceID != execCtx.WorkspaceID {
+		return nil, shared.NewForbiddenError("access", "plan")
+	}
+
 	// Get phases
 	phases, err := t.phaseRepo.ListByPlan(ctx, planID)
 	if err != nil {
@@ -192,10 +195,8 @@ func (t *CreatePlanTool) Execute(ctx context.Context, execCtx mcp.ExecutionConte
 		return nil, shared.NewUnauthorizedError("user ID is required")
 	}
 
+	// Always use the authenticated user's workspace; ignore client-supplied workspaceId
 	workspaceID := execCtx.WorkspaceID
-	if ws := getOptionalString(args, "workspaceId"); ws != nil {
-		workspaceID = *ws
-	}
 	if workspaceID == "" {
 		return nil, shared.NewValidationError("workspaceId", "workspace ID is required")
 	}
@@ -278,6 +279,15 @@ func (t *UpdatePlanTool) Execute(ctx context.Context, execCtx mcp.ExecutionConte
 	planID, err := getRequiredString(args, "planId")
 	if err != nil {
 		return nil, err
+	}
+
+	// Verify workspace ownership
+	p, err := t.planRepo.GetByID(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	if p.WorkspaceID != execCtx.WorkspaceID {
+		return nil, shared.NewForbiddenError("access", "plan")
 	}
 
 	// Build update input

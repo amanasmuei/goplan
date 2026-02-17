@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/goplan/backend/internal/middleware"
 	"github.com/goplan/backend/internal/models"
 	"github.com/goplan/backend/internal/repository"
 )
@@ -34,6 +35,9 @@ func (h *BlockerHandler) CreateBlocker(c *fiber.Ctx) error {
 	var req models.CreateBlockerRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: "Invalid request body"})
+	}
+	if err := middleware.Validate(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: err.Error()})
 	}
 
 	userID, orgID, err := getUserContext(c)
@@ -118,14 +122,23 @@ func (h *BlockerHandler) ResolveBlocker(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: "Invalid request body"})
 	}
+	if err := middleware.Validate(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: err.Error()})
+	}
 
-	_, _, err = getUserContext(c)
+	_, orgID, err := getUserContext(c)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{Error: err.Error()})
 	}
 
 	blocker, err := h.blockerRepo.GetByID(c.Context(), blockerID)
 	if err != nil || blocker == nil {
+		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Blocker not found"})
+	}
+
+	// Verify the blocker's task belongs to the caller's org
+	task, err := h.taskRepo.GetByID(c.Context(), blocker.TaskID)
+	if err != nil || task == nil || task.OrganizationID != orgID {
 		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Blocker not found"})
 	}
 

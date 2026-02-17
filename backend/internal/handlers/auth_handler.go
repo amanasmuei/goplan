@@ -6,6 +6,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/goplan/backend/internal/config"
+	"github.com/goplan/backend/internal/middleware"
 	"github.com/goplan/backend/internal/models"
 	"github.com/goplan/backend/internal/repository"
 	"golang.org/x/crypto/bcrypt"
@@ -66,11 +67,9 @@ func (h *AuthHandler) Login(c *fiber.Ctx) error {
 			"error": "Invalid request body",
 		})
 	}
-
-	// Validate request
-	if req.Email == "" || req.Password == "" {
+	if err := middleware.Validate(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Email and password are required",
+			"error": err.Error(),
 		})
 	}
 
@@ -154,17 +153,9 @@ func (h *AuthHandler) Register(c *fiber.Ctx) error {
 			"error": "Invalid request body",
 		})
 	}
-
-	// Validate request
-	if req.Email == "" || req.Password == "" || req.Name == "" {
+	if err := middleware.Validate(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Email, password, and name are required",
-		})
-	}
-
-	if len(req.Password) < 8 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Password must be at least 8 characters",
+			"error": err.Error(),
 		})
 	}
 

@@ -446,7 +446,7 @@ func newUATTestContext(t *testing.T) *uatTestContext {
 
 	return &uatTestContext{
 		t:           t,
-		authHandler: NewAuthHandler(userRepo, jwt),
+		authHandler: NewAuthHandler(userRepo, jwt, nil),
 		userRepo:    userRepo,
 		jwt:         jwt,
 	}

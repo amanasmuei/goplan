@@ -27,7 +27,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: goplan-redis
-    command: redis-server --requirepass ${REDIS_PASSWORD:-changeme}
+    command: redis-server --requirepass ${REDIS_PASSWORD}
     # Use 127.0.0.1 binding for development safety.
     # In production, remove `ports` and use `expose` instead to keep
     # Redis accessible only from the internal Docker network.
@@ -36,7 +36,7 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-changeme}", "ping"]
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -51,7 +51,7 @@ services:
       dockerfile: Dockerfile
     container_name: goplan-embedding
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       - MODEL_NAME=all-MiniLM-L6-v2
     healthcheck:
@@ -82,7 +82,7 @@ services:
       - DB_SSLMODE=${DB_SSLMODE:-disable}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=${REDIS_PASSWORD:-changeme}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       - JWT_SECRET=${JWT_SECRET}
       - EMBEDDING_SERVICE_URL=http://embedding-service:8000
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}

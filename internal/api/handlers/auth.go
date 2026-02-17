@@ -9,6 +9,7 @@ import (
 
 	"github.com/goplan/goplan/internal/auth"
 	"github.com/goplan/goplan/internal/domain/user"
+	"github.com/goplan/goplan/internal/redis"
 	"github.com/goplan/goplan/internal/repository"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -16,16 +17,18 @@ import (
 // AuthHandler handles authentication-related HTTP requests.
 type AuthHandler struct {
 	*BaseHandler
-	userRepo repository.UserRepository
-	jwt      *auth.JWT
+	userRepo  repository.UserRepository
+	jwt       *auth.JWT
+	blacklist *redis.TokenBlacklist
 }
 
 // NewAuthHandler creates a new auth handler.
-func NewAuthHandler(userRepo repository.UserRepository, jwt *auth.JWT) *AuthHandler {
+func NewAuthHandler(userRepo repository.UserRepository, jwt *auth.JWT, blacklist *redis.TokenBlacklist) *AuthHandler {
 	return &AuthHandler{
 		BaseHandler: NewBaseHandler(),
 		userRepo:    userRepo,
 		jwt:         jwt,
+		blacklist:   blacklist,
 	}
 }
 
@@ -259,8 +262,16 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// For stateless JWT, logout is handled client-side by discarding tokens
-	// In a more complete implementation, you might blacklist the refresh token
+	// Extract and blacklist the access token so it cannot be reused
+	if h.blacklist != nil {
+		authHeader := r.Header.Get("Authorization")
+		if token, err := auth.ExtractBearerToken(authHeader); err == nil {
+			if claims, err := h.jwt.ValidateToken(token); err == nil && claims.TokenID != "" {
+				expiry := time.Unix(claims.ExpiresAt, 0)
+				_ = h.blacklist.Add(r.Context(), claims.TokenID, expiry)
+			}
+		}
+	}
 
 	h.WriteJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,

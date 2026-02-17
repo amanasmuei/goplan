@@ -24,7 +24,7 @@ ENV VITE_API_URL=$VITE_API_URL
 RUN yarn build
 
 # Production stage
-FROM nginx:alpine
+FROM nginx:alpine AS production
 
 # Create non-root user and fix permissions
 RUN addgroup -g 1001 -S appgroup && adduser -u 1001 -S appuser -G appgroup && \

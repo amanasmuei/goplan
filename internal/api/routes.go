@@ -7,6 +7,7 @@ import (
 	"github.com/goplan/goplan/internal/api/handlers"
 	"github.com/goplan/goplan/internal/api/middleware"
 	"github.com/goplan/goplan/internal/auth"
+	"github.com/goplan/goplan/internal/redis"
 	"github.com/goplan/goplan/internal/repository"
 )
 
@@ -33,11 +34,11 @@ type Repositories struct {
 }
 
 // NewRouter creates a new API router with all handlers.
-func NewRouter(repos *Repositories, jwt *auth.JWT, authMw *auth.Middleware) *Router {
+func NewRouter(repos *Repositories, jwt *auth.JWT, authMw *auth.Middleware, blacklist *redis.TokenBlacklist) *Router {
 	// Store the JWT middleware for use in RegisterRoutes
 	jwtMiddleware = authMw
 	return &Router{
-		authHandler:      handlers.NewAuthHandler(repos.User, jwt),
+		authHandler:      handlers.NewAuthHandler(repos.User, jwt, blacklist),
 		userHandler:      handlers.NewUserHandler(repos.User, repos.Workspace),
 		workspaceHandler: handlers.NewWorkspaceHandler(repos.Workspace, repos.User),
 		planHandler:      handlers.NewPlanHandler(repos.Plan, repos.Workspace),

@@ -99,6 +99,17 @@ func (c *Config) Validate() error {
 	if len(c.JWT.Secret) < 32 {
 		return fmt.Errorf("JWT_SECRET must be at least 32 characters")
 	}
+	if c.Server.Environment == "production" {
+		if c.Database.Password == "" || c.Database.Password == "goplan" {
+			return fmt.Errorf("DB_PASSWORD must be set to a secure value in production")
+		}
+		if c.Redis.Password == "" || c.Redis.Password == "changeme" {
+			return fmt.Errorf("REDIS_PASSWORD must be set to a secure value in production")
+		}
+		if c.Database.SSLMode == "disable" {
+			return fmt.Errorf("DB_SSLMODE must not be 'disable' in production")
+		}
+	}
 	return nil
 }
 

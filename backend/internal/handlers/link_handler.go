@@ -3,6 +3,7 @@ package handlers
 import (
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
+	"github.com/goplan/backend/internal/middleware"
 	"github.com/goplan/backend/internal/models"
 	"github.com/goplan/backend/internal/repository"
 )
@@ -34,6 +35,9 @@ func (h *LinkHandler) CreateLink(c *fiber.Ctx) error {
 	var req models.CreateTaskLinkRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: "Invalid request body"})
+	}
+	if err := middleware.Validate(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: err.Error()})
 	}
 
 	userID, orgID, err := getUserContext(c)
@@ -139,9 +143,20 @@ func (h *LinkHandler) DeleteLink(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusBadRequest).JSON(ErrorResponse{Error: "Invalid link ID"})
 	}
 
-	_, _, err = getUserContext(c)
+	_, orgID, err := getUserContext(c)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(ErrorResponse{Error: err.Error()})
+	}
+
+	// Verify the link exists and belongs to the caller's org
+	link, err := h.linkRepo.GetByID(c.Context(), linkID)
+	if err != nil || link == nil {
+		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Link not found"})
+	}
+
+	sourceTask, err := h.taskRepo.GetByID(c.Context(), link.SourceTaskID)
+	if err != nil || sourceTask == nil || sourceTask.OrganizationID != orgID {
+		return c.Status(fiber.StatusNotFound).JSON(ErrorResponse{Error: "Link not found"})
 	}
 
 	if err := h.linkRepo.Delete(c.Context(), linkID); err != nil {

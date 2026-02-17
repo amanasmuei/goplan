@@ -321,10 +321,9 @@ func (s *Server) routeIntent(intentType string) string {
 }
 
 // getExecutionContext extracts execution context from the authenticated user
-// stored in the request context by the auth middleware. Falls back to raw
-// HTTP headers only when no auth context is available (e.g. dev mode without JWT).
+// stored in the request context by the auth middleware. Returns an empty
+// context if no authenticated user is found — never trusts raw HTTP headers.
 func (s *Server) getExecutionContext(r *http.Request) ExecutionContext {
-	// First, try to extract from the authenticated context set by auth middleware
 	if user := auth.GetUser(r.Context()); user != nil {
 		return ExecutionContext{
 			UserID:      user.ID,
@@ -333,12 +332,8 @@ func (s *Server) getExecutionContext(r *http.Request) ExecutionContext {
 		}
 	}
 
-	// Fall back to headers only if auth context is not available
-	return ExecutionContext{
-		UserID:      r.Header.Get("X-User-ID"),
-		WorkspaceID: r.Header.Get("X-Workspace-ID"),
-		Role:        r.Header.Get("X-User-Role"),
-	}
+	// No authenticated user; return empty context.
+	return ExecutionContext{}
 }
 
 // recordAudit records an audit entry.

@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // Standard JWT errors.
@@ -104,6 +106,7 @@ func (j *JWT) GenerateAccessToken(userID, email, name string) (string, error) {
 		Issuer:    j.config.Issuer,
 		IssuedAt:  now.Unix(),
 		ExpiresAt: now.Add(j.config.AccessTokenTTL).Unix(),
+		TokenID:   uuid.New().String(),
 		TokenType: TokenTypeAccess,
 		UserID:    userID,
 		Email:     email,
@@ -120,6 +123,7 @@ func (j *JWT) GenerateRefreshToken(userID string) (string, error) {
 		Issuer:    j.config.Issuer,
 		IssuedAt:  now.Unix(),
 		ExpiresAt: now.Add(j.config.RefreshTokenTTL).Unix(),
+		TokenID:   uuid.New().String(),
 		TokenType: TokenTypeRefresh,
 		UserID:    userID,
 	}

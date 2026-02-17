@@ -159,6 +159,14 @@ func main() {
 		Issuer:          "goplan",
 	})
 
+	// Initialize token blacklist (requires Redis)
+	var redisBlacklist *goplanredis.TokenBlacklist
+	var tokenBlacklist auth.TokenBlacklist
+	if redisClient != nil {
+		redisBlacklist = goplanredis.NewTokenBlacklist(redisClient)
+		tokenBlacklist = redisBlacklist
+	}
+
 	// Initialize auth middleware
 	authMiddleware := auth.NewMiddleware(auth.MiddlewareConfig{
 		JWT:     jwtAuth,
@@ -170,8 +178,7 @@ func main() {
 			"/metrics",
 			"/version",
 		},
-		DevMode:   cfg.IsDevelopment(),
-		DevUserID: "",
+		Blacklist: tokenBlacklist,
 	})
 
 	// Initialize rate limiter (uses Redis when available, in-memory otherwise)
@@ -239,7 +246,7 @@ func main() {
 		Plan:      repos.Plan,
 		Task:      repos.Task,
 		Comment:   repos.Comment,
-	}, jwtAuth, authMiddleware)
+	}, jwtAuth, authMiddleware, redisBlacklist)
 
 	// Create MCP tool registry
 	registry := mcp.NewToolRegistry()
@@ -517,9 +524,6 @@ func corsMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 			allowedHeaders := "Accept, Authorization, Content-Type, X-Request-ID"
-			if cfg.IsDevelopment() {
-				allowedHeaders += ", X-User-ID, X-Workspace-ID, X-User-Role"
-			}
 			w.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
 			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Max-Age", "3600")
