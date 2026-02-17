@@ -1,4 +1,4 @@
-.PHONY: help dev build test lint clean docker-up docker-down migrate sqlc migrate-up migrate-down
+.PHONY: help dev build test lint clean docker-up docker-down migrate sqlc migrate-up migrate-down frontend api swagger install
 
 # Default target
 help:
