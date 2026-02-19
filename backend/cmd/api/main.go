@@ -18,20 +18,20 @@ import (
 	"github.com/gofiber/swagger"
 	"github.com/google/uuid"
 	"github.com/joho/godotenv"
+	"github.com/goplan/backend/internal/claude"
 	"github.com/goplan/backend/internal/config"
 	"github.com/goplan/backend/internal/database"
 	"github.com/goplan/backend/internal/handlers"
 	"github.com/goplan/backend/internal/middleware"
 	"github.com/goplan/backend/internal/repository"
 	"github.com/goplan/backend/internal/services"
-	"github.com/goplan/backend/internal/workers"
 
 	_ "github.com/goplan/backend/docs"
 )
 
 // @title GoPlan API
-// @version 1.0
-// @description Planning-First Task Management API
+// @version 2.0
+// @description AI-Powered Strategic Planning API
 // @host localhost:8080
 // @BasePath /api/v1
 // @securityDefinitions.apikey BearerAuth
@@ -71,15 +71,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Initialize repositories
-	taskRepo := repository.NewTaskRepository(db.Pool)
-	linkRepo := repository.NewTaskLinkRepository(db.Pool)
-	justificationRepo := repository.NewJustificationRepository(db.Pool)
-	blockerRepo := repository.NewBlockerRepository(db.Pool)
-	reviewRepo := repository.NewReviewRepository(db.Pool)
-	ackRepo := repository.NewAcknowledgmentRepository(db.Pool)
-	teamRepo := repository.NewTeamRepository(db.Pool)
-	projectRepo := repository.NewProjectRepository(db.Pool)
+	// Initialize Claude client
+	var claudeClient *claude.Client
+	if cfg.AI.Enabled && cfg.AI.ClaudeAPIKey != "" {
+		claudeClient = claude.NewClient(
+			cfg.AI.ClaudeAPIKey,
+			cfg.AI.ClaudeModel,
+			cfg.AI.MaxTokens,
+			time.Duration(cfg.AI.TimeoutSec)*time.Second,
+			cfg.AI.RateLimitRPM,
+		)
+		slog.Info("Claude AI client initialized", "model", cfg.AI.ClaudeModel)
+	} else {
+		slog.Warn("Claude AI client not configured (AI_ENABLED=false or CLAUDE_API_KEY empty)")
+	}
 
 	// Initialize embedding client
 	var embeddingClient *services.EmbeddingClient
@@ -88,33 +93,27 @@ func main() {
 		slog.Info("Embedding service configured", "url", cfg.Embedding.ServiceURL)
 	}
 
+	// Initialize repositories
+	userRepo := repository.NewUserRepository(db.Pool)
+	planRepo := repository.NewPlanRepository(db.Pool)
+	sectionRepo := repository.NewSectionRepository(db.Pool)
+	versionRepo := repository.NewVersionRepository(db.Pool)
+	subRepo := repository.NewSubscriptionRepository(db.Pool)
+	genLogRepo := repository.NewGenerationLogRepository(db.Pool)
+
 	// Initialize services
-	taskService := services.NewTaskService(
-		taskRepo, linkRepo, justificationRepo, blockerRepo, reviewRepo, ackRepo, embeddingClient, db.Pool,
+	strategyService := services.NewStrategyService(
+		claudeClient, planRepo, sectionRepo, versionRepo, genLogRepo, subRepo, embeddingClient,
 	)
 
-	// Start embedding worker for background processing
-	var embeddingWorker *workers.EmbeddingWorker
-	if embeddingClient != nil {
-		embeddingWorker = workers.NewEmbeddingWorker(db.Pool, embeddingClient)
-		embeddingWorker.Start()
-	}
-
-	// Initialize user repository
-	userRepo := repository.NewUserRepository(db.Pool)
-
 	// Initialize handlers
-	taskHandler := handlers.NewTaskHandler(taskService)
-	linkHandler := handlers.NewLinkHandler(linkRepo, taskRepo)
-	justificationHandler := handlers.NewJustificationHandler(justificationRepo, taskRepo)
-	blockerHandler := handlers.NewBlockerHandler(blockerRepo, taskRepo)
-	reviewHandler := handlers.NewReviewHandler(reviewRepo, taskRepo)
-	teamHandler := handlers.NewTeamHandler(teamRepo, projectRepo)
-	projectHandler := handlers.NewProjectHandler(projectRepo, teamRepo)
 	authHandler := handlers.NewAuthHandler(userRepo, &cfg.JWT)
+	strategyHandler := handlers.NewStrategyHandler(strategyService, versionRepo, sectionRepo, planRepo)
+	subscriptionHandler := handlers.NewSubscriptionHandler(subRepo)
 
 	// Initialize middleware
 	authMiddleware := middleware.NewAuthMiddleware(&cfg.JWT)
+	subscriptionMw := middleware.NewSubscriptionMiddleware(subRepo, planRepo)
 
 	// Create Fiber app
 	app := fiber.New(fiber.Config{
@@ -125,7 +124,7 @@ func main() {
 		TrustedProxies:          cfg.Server.TrustedProxies,
 		ProxyHeader:             cfg.Server.ProxyHeader,
 		ReadTimeout:             15 * time.Second,
-		WriteTimeout:            30 * time.Second,
+		WriteTimeout:            120 * time.Second, // Increased for AI generation
 		IdleTimeout:             120 * time.Second,
 	})
 
@@ -185,7 +184,7 @@ func main() {
 		}
 		return c.JSON(fiber.Map{
 			"status":  "healthy",
-			"version": "1.0.0",
+			"version": "2.0.0",
 		})
 	})
 
@@ -221,62 +220,23 @@ func main() {
 	// User routes
 	api.Get("/users", authHandler.ListUsers)
 
-	// Task routes
-	tasks := api.Group("/tasks")
-	tasks.Post("/", taskHandler.CreateTask)
-	tasks.Get("/", taskHandler.ListTasks)
-	tasks.Get("/:id", taskHandler.GetTask)
-	tasks.Put("/:id", taskHandler.UpdateTask)
-	tasks.Delete("/:id", taskHandler.DeleteTask)
-	tasks.Get("/:id/similar", taskHandler.GetSimilarTasks)
-	tasks.Post("/:id/acknowledge", taskHandler.AcknowledgeTask)
-	tasks.Post("/:id/start", taskHandler.StartTask)
-	tasks.Post("/:id/complete", taskHandler.CompleteTask)
+	// Strategy routes
+	strategies := api.Group("/strategies")
+	strategies.Post("/", subscriptionMw.CheckPlanLimit(), strategyHandler.CreateStrategy)
+	strategies.Get("/", strategyHandler.ListStrategies)
+	strategies.Get("/:id", strategyHandler.GetStrategy)
+	strategies.Delete("/:id", strategyHandler.ArchiveStrategy)
+	strategies.Post("/:id/sections/:type/regenerate", subscriptionMw.RequireSubscription("regeneration"), strategyHandler.RegenerateSection)
+	strategies.Post("/:id/sections/:type/refine", subscriptionMw.RequireSubscription("refine"), strategyHandler.RefineSection)
+	strategies.Get("/:id/versions", subscriptionMw.RequireSubscription("version_history"), strategyHandler.ListVersions)
+	strategies.Get("/:id/versions/:version", strategyHandler.GetVersion)
+	strategies.Get("/:id/sections/:type/versions", strategyHandler.ListSectionVersions)
+	strategies.Get("/:id/similar", strategyHandler.GetSimilarStrategies)
+	strategies.Get("/:id/export", subscriptionMw.RequireSubscription("export"), strategyHandler.ExportStrategy)
 
-	// Task link routes
-	tasks.Post("/:id/links", linkHandler.CreateLink)
-	tasks.Get("/:id/links", linkHandler.ListLinks)
-	tasks.Delete("/:id/links/:linkId", linkHandler.DeleteLink)
-
-	// Justification routes
-	tasks.Post("/:id/justify", justificationHandler.CreateJustification)
-	tasks.Get("/:id/justify", justificationHandler.GetJustification)
-
-	// Blocker routes
-	tasks.Post("/:id/blockers", blockerHandler.CreateBlocker)
-	tasks.Get("/:id/blockers", blockerHandler.ListBlockers)
-
-	// Review routes
-	tasks.Post("/:id/review", reviewHandler.CreateReview)
-	tasks.Get("/:id/review", reviewHandler.GetReview)
-
-	// Blocker resolution (separate route)
-	api.Put("/blockers/:id/resolve", blockerHandler.ResolveBlocker)
-
-	// Team routes
-	teams := api.Group("/teams")
-	teams.Post("/", teamHandler.CreateTeam)
-	teams.Get("/", teamHandler.ListTeams)
-	teams.Get("/:id", teamHandler.GetTeam)
-	teams.Put("/:id", teamHandler.UpdateTeam)
-	teams.Delete("/:id", teamHandler.DeleteTeam)
-	teams.Post("/:id/members", teamHandler.AddMember)
-	teams.Get("/:id/members", teamHandler.ListMembers)
-	teams.Put("/:id/members/:userId", teamHandler.UpdateMemberRole)
-	teams.Delete("/:id/members/:userId", teamHandler.RemoveMember)
-	teams.Get("/:id/projects", teamHandler.ListTeamProjects)
-
-	// Project routes
-	projects := api.Group("/projects")
-	projects.Post("/", projectHandler.CreateProject)
-	projects.Get("/", projectHandler.ListProjects)
-	projects.Get("/:id", projectHandler.GetProject)
-	projects.Put("/:id", projectHandler.UpdateProject)
-	projects.Delete("/:id", projectHandler.DeleteProject)
-	projects.Post("/:id/archive", projectHandler.ArchiveProject)
-	projects.Post("/:id/teams", projectHandler.AssignTeams)
-	projects.Delete("/:id/teams/:teamId", projectHandler.RemoveTeam)
-	projects.Get("/:id/teams", projectHandler.GetProjectTeams)
+	// Subscription routes
+	api.Get("/subscription", subscriptionHandler.GetSubscription)
+	api.Post("/subscription/upgrade", subscriptionHandler.UpgradeSubscription)
 
 	// Graceful shutdown
 	go func() {
@@ -291,11 +251,6 @@ func main() {
 	<-quit
 
 	slog.Info("Shutting down server...")
-
-	// Stop embedding worker
-	if embeddingWorker != nil {
-		embeddingWorker.Stop()
-	}
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()

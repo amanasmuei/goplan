@@ -8,11 +8,13 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	Redis    RedisConfig
-	JWT      JWTConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	Redis     RedisConfig
+	JWT       JWTConfig
 	Embedding EmbeddingConfig
+	AI        AIConfig
+	Stripe    StripeConfig
 }
 
 type ServerConfig struct {
@@ -51,6 +53,23 @@ type EmbeddingConfig struct {
 	ServiceURL string
 }
 
+type AIConfig struct {
+	ClaudeAPIKey string
+	ClaudeModel  string
+	MaxTokens    int
+	Temperature  float64
+	TimeoutSec   int
+	RateLimitRPM int
+	Enabled      bool
+}
+
+type StripeConfig struct {
+	SecretKey      string
+	WebhookSecret  string
+	ProPriceID     string
+	ProPlusPriceID string
+}
+
 func Load() *Config {
 	return &Config{
 		Server: ServerConfig{
@@ -83,6 +102,21 @@ func Load() *Config {
 		},
 		Embedding: EmbeddingConfig{
 			ServiceURL: getEnv("EMBEDDING_SERVICE_URL", "http://localhost:8000"),
+		},
+		AI: AIConfig{
+			ClaudeAPIKey: getEnv("CLAUDE_API_KEY", ""),
+			ClaudeModel:  getEnv("CLAUDE_MODEL", "claude-sonnet-4-20250514"),
+			MaxTokens:    getEnvInt("AI_MAX_TOKENS", 8192),
+			Temperature:  getEnvFloat("AI_TEMPERATURE", 0.7),
+			TimeoutSec:   getEnvInt("AI_TIMEOUT_SEC", 120),
+			RateLimitRPM: getEnvInt("AI_RATE_LIMIT_RPM", 30),
+			Enabled:      getEnvBool("AI_ENABLED", true),
+		},
+		Stripe: StripeConfig{
+			SecretKey:      getEnv("STRIPE_SECRET_KEY", ""),
+			WebhookSecret:  getEnv("STRIPE_WEBHOOK_SECRET", ""),
+			ProPriceID:     getEnv("STRIPE_PRO_PRICE_ID", ""),
+			ProPlusPriceID: getEnv("STRIPE_PRO_PLUS_PRICE_ID", ""),
 		},
 	}
 }
@@ -124,6 +158,24 @@ func getEnvInt(key string, defaultValue int) int {
 	if value := os.Getenv(key); value != "" {
 		if intVal, err := strconv.Atoi(value); err == nil {
 			return intVal
+		}
+	}
+	return defaultValue
+}
+
+func getEnvFloat(key string, defaultValue float64) float64 {
+	if value := os.Getenv(key); value != "" {
+		if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			return floatVal
+		}
+	}
+	return defaultValue
+}
+
+func getEnvBool(key string, defaultValue bool) bool {
+	if value := os.Getenv(key); value != "" {
+		if boolVal, err := strconv.ParseBool(value); err == nil {
+			return boolVal
 		}
 	}
 	return defaultValue
