@@ -87,6 +87,10 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - EMBEDDING_SERVICE_URL=http://embedding-service:8000
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
+      - CLAUDE_API_KEY=${CLAUDE_API_KEY}
+      - CLAUDE_MODEL=${CLAUDE_MODEL:-claude-sonnet-4-20250514}
+      - AI_MAX_TOKENS=${AI_MAX_TOKENS:-8192}
+      - AI_ENABLED=${AI_ENABLED:-true}
     depends_on:
       postgres:
         condition: service_healthy
@@ -104,19 +108,19 @@ services:
 
   frontend:
     build:
-      context: ./frontend
+      context: ./frontend-next
       dockerfile: Dockerfile
-      args:
-        - VITE_API_URL=/api/v1
     container_name: goplan-frontend
     ports:
       - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_URL=http://api:8080/api/v1
     depends_on:
       - api
     deploy:
       resources:
         limits:
-          memory: 256M
+          memory: 512M
 
 volumes:
   postgres_data:

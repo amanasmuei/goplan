@@ -209,6 +209,39 @@ func (r *PlanRepository) UpdateEmbedding(ctx context.Context, id uuid.UUID, embe
 	return nil
 }
 
+func (r *PlanRepository) FindWithoutEmbedding(ctx context.Context, limit int) ([]models.StrategicPlan, error) {
+	query := `
+		SELECT id, user_id, organization_id, title, original_input,
+			category, sub_category, complexity, status, current_version,
+			metadata, created_at, updated_at
+		FROM strategic_plans
+		WHERE content_embedding IS NULL AND status != 'archived'
+		ORDER BY created_at DESC
+		LIMIT $1`
+
+	rows, err := r.db.Query(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find plans without embedding: %w", err)
+	}
+	defer rows.Close()
+
+	var plans []models.StrategicPlan
+	for rows.Next() {
+		var plan models.StrategicPlan
+		err := rows.Scan(
+			&plan.ID, &plan.UserID, &plan.OrganizationID, &plan.Title, &plan.OriginalInput,
+			&plan.Category, &plan.SubCategory, &plan.Complexity, &plan.Status, &plan.CurrentVersion,
+			&plan.Metadata, &plan.CreatedAt, &plan.UpdatedAt,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan plan: %w", err)
+		}
+		plans = append(plans, plan)
+	}
+
+	return plans, rows.Err()
+}
+
 func (r *PlanRepository) FindSimilar(ctx context.Context, embedding pgvector.Vector, orgID uuid.UUID, excludeID *uuid.UUID, limit int) ([]models.StrategicPlan, error) {
 	query := `
 		SELECT id, user_id, organization_id, title, original_input,

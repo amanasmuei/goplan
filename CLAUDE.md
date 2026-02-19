@@ -4,31 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-GoPlan is a universal, AI-powered project management platform with two Go backends and a React frontend:
+GoPlan is an AI-powered strategic planning platform that transforms vague ideas into structured, actionable strategy documents. Users describe a goal or business idea in plain text, and the system generates a comprehensive 5-section strategic plan using Claude AI.
 
-1. **MCP Server** (root `cmd/server/`) — Go 1.24, `net/http`, `pgx/v5`, `sqlc`. Hosts the MCP intent/tool system, REST API v1, and Claude AI integration.
-2. **Fiber API** (`backend/cmd/api/`) — Go + Fiber framework. REST API with Swagger docs, pgvector-powered semantic search, and an embedding service integration.
-3. **Frontend** (`frontend/`) — React + TypeScript, Vite, TanStack Query, Zustand, Tailwind CSS.
-
-Supporting services: PostgreSQL 15+ (with pgvector), Redis 7, Python FastAPI embedding service.
+**Stack:**
+- **Backend** (`backend/`) -- Go + Fiber framework, PostgreSQL 16 (pgvector), Redis 7, Claude AI
+- **Frontend** (`frontend-next/`) -- Next.js 16, TypeScript, Tailwind CSS, shadcn/ui
+- **Embedding Service** (`embedding-service/`) -- Python FastAPI, sentence-transformers (all-MiniLM-L6-v2)
 
 ## Build Commands
 
-### MCP Server (root)
-
-```bash
-go build ./...                             # build
-go run ./cmd/server                        # run
-go test ./...                              # test all
-go test -v -race -cover ./...              # with race detection and coverage
-go test -v ./internal/mcp/tools/...        # test specific package
-go test -v -run TestTaskCreate ./...       # run specific test
-golangci-lint run --timeout=5m ./...       # lint
-golangci-lint run --fix --timeout=5m ./... # lint with auto-fix
-cd sqlc && sqlc generate                   # generate type-safe SQL code
-```
-
-### Fiber API (backend/)
+### Backend (backend/)
 
 ```bash
 cd backend && go build -o bin/api ./cmd/api    # build
@@ -41,28 +26,26 @@ cd backend && golangci-lint run                # lint
 cd backend && swag init -g cmd/api/main.go -o docs  # regenerate Swagger
 ```
 
-### Frontend
+### Frontend (frontend-next/)
 
 ```bash
-cd frontend && yarn dev          # dev server (Vite, port 3000)
-cd frontend && yarn build        # production build
-cd frontend && yarn test         # unit tests (Vitest)
-cd frontend && yarn test:e2e     # Playwright E2E (needs full stack)
-cd frontend && yarn lint         # ESLint
-cd frontend && yarn type-check   # TypeScript check
+cd frontend-next && yarn dev          # dev server (Next.js, port 3000)
+cd frontend-next && yarn build        # production build
+cd frontend-next && yarn test         # unit tests
+cd frontend-next && yarn lint         # ESLint
+cd frontend-next && yarn type-check   # TypeScript check
 ```
 
-Package manager: **Yarn 4.12.0** (not npm) for the frontend.
+Package manager: **Yarn** (not npm) for the frontend.
 
 ### Database Migrations
 
 ```bash
-# Root MCP server (golang-migrate)
-migrate -path ./migrations -database "$DATABASE_URL" up
-migrate -path ./migrations -database "$DATABASE_URL" down 1
+# Using golang-migrate CLI
+migrate -path ./backend/migrations -database "$DATABASE_URL" up
+migrate -path ./backend/migrations -database "$DATABASE_URL" down 1
 
-# Fiber backend — auto-applied on postgres container start via init.sql
-# Reset: docker-compose down -v && docker-compose up -d postgres
+# Reset everything: docker-compose down -v && docker-compose up -d postgres
 ```
 
 ### Makefile (shortcuts)
@@ -70,130 +53,139 @@ migrate -path ./migrations -database "$DATABASE_URL" down 1
 ```bash
 make dev            # start postgres, redis, embedding-service via docker-compose
 make api            # run Fiber backend locally
-make frontend       # run frontend dev server
-make build          # build backend + frontend
-make test           # run all tests
-make lint           # run linters
+make frontend       # run Next.js frontend dev server
+make build          # build backend binary + frontend production build
+make test           # run backend + frontend tests
+make lint           # run backend + frontend linters
 make docker-up      # start all Docker services
 make docker-down    # stop all Docker services
 make swagger        # regenerate Swagger docs
-make install        # download Go + npm dependencies
+make install        # download Go + Node dependencies
+make migrate-up     # run database migrations
+make migrate-down   # rollback one migration
 ```
 
 ## Architecture
 
-### Two Backend Systems
-
-The repo contains two separate Go modules with different approaches:
-
-| | MCP Server (root) | Fiber API (backend/) |
-|-|-|-|
-| Entry point | `cmd/server/main.go` | `backend/cmd/api/main.go` |
-| Framework | `net/http` | Go Fiber |
-| DB access | `pgx/v5` + `sqlc` generated code | `pgx/v5` direct queries |
-| Auth | JWT via `internal/auth/` | JWT via `internal/middleware/` |
-| AI | Claude client + MCP intent routing | Embedding service for semantic search |
-| go.mod | root `go.mod` (Go 1.24) | `backend/go.mod` |
-
-### MCP Server Architecture (root)
-
-All AI interactions flow through a standardized intent envelope system:
-
-1. **Intent Envelope** (`MCPIntentEnvelope` in `internal/mcp/types.go`): Routes user intents with confidence scoring
-2. **Agent Router** dispatches to specialized agents:
-   - `PlannerAgent`: CREATE_PLAN, SUGGEST_TASKS
-   - `ExecutorAgent`: ADD_TASK, UPDATE_TASK, MOVE_TASK, ASSIGN_TASK
-   - `AnalystAgent`: ASK_SUMMARY (default fallback)
-3. **Tool Registry** (`internal/mcp/registry.go`): Plugin system with 17+ registered MCP tools
-4. **Audit System**: Full trail in `mcp_audit_log` table
-
-**Confidence thresholds**:
-- `>= 0.8` → proceed_with_confirmation
-- `0.6–0.79` → proceed_with_uncertainty
-- `< 0.6` → ask_clarification
-
-**Key layers (root)**:
-```
-cmd/server/main.go           → Entry point, dependency injection, middleware chain
-internal/api/handlers/       → REST API handlers
-internal/api/middleware/      → Security headers
-internal/auth/               → JWT auth + middleware
-internal/mcp/server.go       → MCP HTTP endpoints
-internal/mcp/tools/          → MCP tool implementations
-internal/claude/             → Claude API client, service, safety checker
-internal/domain/             → Domain entities (plan/, task/, user/, workspace/)
-internal/postgres/           → Repository implementations (sqlc-generated)
-internal/repository/         → Repository interfaces
-internal/config/             → Config loading from env
-```
-
-**MCP Tool interface** (`internal/mcp/registry.go`):
-```go
-type Tool interface {
-    Name() string        // e.g., "task.create"
-    Description() string
-    Execute(ctx context.Context, execCtx ExecutionContext, args map[string]interface{}) (interface{}, error)
-}
-```
-
-**MCP endpoints**: `POST /mcp/intent`, `POST /mcp/tool/execute`, `POST /mcp/intent/approve`, `GET /mcp/tools`
-
-Context passed via headers: `X-User-ID`, `X-Workspace-ID`, `X-User-Role`
-
-### Fiber API Architecture (backend/)
+### Backend (Fiber API)
 
 ```
-backend/cmd/api/main.go          → Entry point, Fiber app, route registration
-backend/internal/handlers/       → HTTP handlers (Swagger-annotated)
-backend/internal/services/       → Business logic (TaskService with embedding client)
-backend/internal/repository/     → PostgreSQL data access with pgvector
-backend/internal/models/         → Domain structs, request/response types
-backend/internal/middleware/     → JWT auth, request validation
-backend/internal/workers/        → EmbeddingWorker (background, every 5 min)
-backend/internal/config/         → Environment config
-backend/internal/database/       → Connection pool (postgres.go)
+backend/cmd/api/main.go          -> Entry point, Fiber app, route registration
+backend/internal/handlers/       -> HTTP handlers (Swagger-annotated)
+  auth_handler.go                   Auth (register, login, dev-token)
+  strategy_handler.go               Strategy CRUD, generation, refinement, search
+  subscription_handler.go           Subscription/billing management
+  common.go                         Shared helpers (error responses, auth context)
+backend/internal/services/       -> Business logic
+  strategy_service.go               AI plan generation, refinement, similarity search
+  prompt_builder.go                 3-layer prompt construction for Claude
+  embedding_client.go               HTTP client for embedding service
+backend/internal/claude/         -> Claude AI client
+  client.go                         Anthropic API wrapper
+  helpers.go                        Response parsing utilities
+backend/internal/repository/     -> PostgreSQL data access (pgx/v5 direct queries)
+  plan_repository.go                Strategic plans (with pgvector similarity)
+  section_repository.go             Plan sections
+  version_repository.go             Section + plan version history
+  generation_log_repository.go      AI generation audit trail
+  subscription_repository.go        User subscriptions
+  user_repository.go                User accounts
+backend/internal/models/         -> Domain structs and request/response types
+  strategic_plan.go                 Plan entity, filters, responses
+  plan_section.go                   Section types + content structure
+  section_content.go                Typed content schemas per section
+  version.go                        Section versions + plan snapshots
+  subscription.go                   Subscription tiers and limits
+  user.go                           User entity
+backend/internal/middleware/     -> JWT auth, request validation
+backend/internal/workers/        -> Background workers
+  strategy_embedding_worker.go      Generates embeddings for plans without them
+backend/internal/config/         -> Environment config loading
+backend/internal/database/       -> Connection pool (pgxpool)
+backend/internal/utils/          -> Shared utilities
 ```
 
 Swagger docs available at `http://localhost:8080/swagger/index.html` when backend is running.
 
+### Strategy Generation Flow
+
+1. User submits plain-text input describing their goal
+2. `PromptBuilder` constructs a 3-layer prompt:
+   - **System prompt**: Expert strategy consultant persona + JSON output schema
+   - **Category overlay**: Domain-specific guidance (business, SaaS, event, etc.)
+   - **Depth instruction**: Standard or deep analysis mode
+3. Claude generates a structured JSON response with classification + 5 sections
+4. `StrategyService` parses the response, creates the plan, and stores sections
+5. Each section is versioned; users can refine individual sections with follow-up prompts
+6. Background `StrategyEmbeddingWorker` generates pgvector embeddings for similarity search
+
+### Section Types (5 per plan)
+
+| Order | Type | Description |
+|-------|------|-------------|
+| 1 | `executive_brief` | High-level summary and key takeaways |
+| 2 | `strategic_context` | Market analysis, competitive landscape |
+| 3 | `recommended_approach` | Core strategy and alternatives considered |
+| 4 | `phased_execution` | Timeline with phases, milestones, KPIs |
+| 5 | `immediate_action` | First 30-day action items |
+
+### Frontend (Next.js App Router)
+
+```
+frontend-next/src/app/
+  (auth)/                        -> Auth layout (login, register)
+  (dashboard)/                   -> Authenticated layout with sidebar
+    dashboard/page.tsx              Dashboard / plan list
+    strategies/new/page.tsx         New strategy creation
+    strategies/[id]/page.tsx        Strategy viewer (3-panel section display)
+    strategies/[id]/versions/       Version history page
+  layout.tsx                     -> Root layout
+  page.tsx                       -> Landing / redirect
+
+frontend-next/src/components/
+  auth/AuthGuard.tsx             -> Route protection
+  layout/Sidebar.tsx             -> Navigation sidebar
+  strategy/                      -> Strategy-specific components
+  ui/                            -> shadcn/ui primitives
+
+frontend-next/src/hooks/         -> React Query hooks (useStrategy, useSubscription)
+frontend-next/src/lib/           -> Utilities, types, API client
+frontend-next/src/store/         -> Zustand stores (auth)
+frontend-next/src/providers/     -> Context providers
+```
+
 ### Data Model
 
-**MCP Server (root)** — Domain-Driven Design:
-- **Plan** and **Task** are the only mandatory entities
-- **Phases, milestones, dependencies, custom fields** are optional
-- Status workflows customizable per plan via `custom_statuses` JSONB
-- Plan domains: `software`, `event`, `ops`, `collection`, `generic`
+Core tables (PostgreSQL with pgvector):
 
-**Fiber API (backend/)** — Task-centric with semantic features:
-- Tasks with `description_embedding` (pgvector column) for similarity search
-- Task links, justifications, blockers, reviews, acknowledgments
-- Teams with hierarchical roles (owner, manager, member, viewer)
-- Projects as logical groupings with team assignments
+- **strategic_plans** -- User plans with category, status, content_embedding (pgvector)
+- **plan_sections** -- 5 sections per plan, each with structured JSON content
+- **section_versions** -- Version history for individual sections (refinements)
+- **plan_versions** -- Full plan snapshots at version boundaries
+- **generation_logs** -- Audit trail for all AI generation requests
+- **subscriptions** -- User subscription tiers (free, pro, pro_plus)
+- **users** -- User accounts with auth
 
-### Frontend Architecture
+Plan categories: `business`, `saas`, `event`, `nonprofit`, `personal`, `education`, `real_estate`, `generic`
 
-```
-frontend/src/pages/         → Route components (TaskList, TaskDetail, Projects, Teams)
-frontend/src/components/    → Reusable UI (Tailwind + lucide-react icons)
-frontend/src/services/api.ts → Axios client with JWT interceptors
-frontend/src/store/         → Zustand stores (authStore)
-frontend/src/types/         → TypeScript types mirroring backend models
-frontend/e2e/               → Playwright E2E tests
-```
+Plan statuses: `draft` -> `generating` -> `complete` -> `archived`
 
 ## Design Constraints
 
-- **Human-in-the-loop**: All AI actions require user approval (draft-first pattern)
-- **Full auditability**: Every action logged to `activity_log` and `mcp_audit_log`
-- **Workspace isolation**: All data scoped to workspace with proper authorization
-- **Agents communicate only via MCP envelopes**, no direct state mutation
-- **Parameterized queries only** — use `$1`, `$2` etc. for all SQL
+- **Structured over conversational**: Generate complete structured documents, not chat responses
+- **Framework integrity**: Each plan always has exactly 5 sections in defined order
+- **Version everything**: Every section refinement creates a new version; plans are snapshotted
+- **Full auditability**: Every AI generation logged to `generation_logs` with token usage
+- **Parameterized queries only** -- use `$1`, `$2` etc. for all SQL; no string interpolation
+- **Subscription-gated features**: Plan creation limits and deep analysis tied to subscription tier
 
 ## Key Conventions
 
-- Repository pattern: interfaces in `internal/repository/`, implementations in `internal/postgres/`
-- Domain entities have `Validate()` methods returning `*ValidationErrors`
-- MCP tools are namespaced: `workspace.*`, `plan.*`, `task.*`, `milestone.*`, `activity.*`
-- Fiber handlers return `error` to Fiber; use `c.Status(code).JSON(ErrorResponse{})` for errors
-- Auth context extracted via `getUserContext()` in Fiber handlers
-- All sqlc queries live in `sqlc/queries/`; run `cd sqlc && sqlc generate` after editing
+- Repository pattern: concrete structs in `backend/internal/repository/` using `pgxpool.Pool`
+- Fiber handlers return `error`; use `c.Status(code).JSON(ErrorResponse{})` for errors
+- Auth context extracted via `getUserContext()` helper in handlers
+- Strategy service orchestrates Claude calls, parsing, storage, and versioning
+- Prompt builder centralizes all AI prompt construction
+- Section types are strongly typed constants in `models/plan_section.go`
+- Embedding worker runs in background goroutine on configurable interval
+- Config loaded from environment variables via `internal/config/config.go`

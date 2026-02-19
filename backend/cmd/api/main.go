@@ -25,6 +25,7 @@ import (
 	"github.com/goplan/backend/internal/middleware"
 	"github.com/goplan/backend/internal/repository"
 	"github.com/goplan/backend/internal/services"
+	"github.com/goplan/backend/internal/workers"
 
 	_ "github.com/goplan/backend/docs"
 )
@@ -93,6 +94,9 @@ func main() {
 		slog.Info("Embedding service configured", "url", cfg.Embedding.ServiceURL)
 	}
 
+	// Worker context for graceful shutdown (cancelled explicitly during shutdown)
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+
 	// Initialize repositories
 	userRepo := repository.NewUserRepository(db.Pool)
 	planRepo := repository.NewPlanRepository(db.Pool)
@@ -100,6 +104,12 @@ func main() {
 	versionRepo := repository.NewVersionRepository(db.Pool)
 	subRepo := repository.NewSubscriptionRepository(db.Pool)
 	genLogRepo := repository.NewGenerationLogRepository(db.Pool)
+
+	// Start strategy embedding worker
+	if embeddingClient != nil {
+		strategyWorker := workers.NewStrategyEmbeddingWorker(planRepo, embeddingClient, 5*time.Minute, 50)
+		go strategyWorker.Start(workerCtx)
+	}
 
 	// Initialize services
 	strategyService := services.NewStrategyService(
@@ -251,6 +261,9 @@ func main() {
 	<-quit
 
 	slog.Info("Shutting down server...")
+
+	// Stop background workers
+	workerCancel()
 
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
